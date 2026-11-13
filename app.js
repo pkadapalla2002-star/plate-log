@@ -620,7 +620,7 @@
     } finally { $("billFile").value = ""; }
   }
   function recipeMacros(r) {
-    const rows = r.i.map(([n, g]) => { const f = foodByName(n); return f ? macrosFor(f, g) : null; }).filter(Boolean);
+    const rows = r.i.concat(r.side ? [r.side] : []).map(([n, g]) => { const f = foodByName(n); return f ? macrosFor(f, g) : null; }).filter(Boolean);
     return totals(rows);
   }
   // Portions per serving for building plates from whatever is in the groceries.
@@ -662,60 +662,74 @@
     });
     return plates.slice(0, 4);
   }
+  const lcName = (n) => n.split(/[,/(]/)[0].trim().toLowerCase();
+  const baseName = (n) => n.replace(/, (raw|cooked|dry|whole|semi-skimmed|skimmed|fat free|firm|plain|fresh)$/i, "");
   function ideaCard(x) {
     const d = el("div", "idea");
-    const ih = el("div", "ih"); ih.append(el("b", null, x.r.n), el("span", "num", x.mac.kcal + " kcal / serving"));
-    const badge = x.missing.length ? "Need to buy: " + x.missing.map((n) => n.toLowerCase()).join(", ") : x.r.plate ? "Made from your items" : "You have everything";
-    const hv = el("div", "have" + (x.missing.length ? "" : " full"), badge);
-    const ing = el("div", "ing", x.r.i.map(([n, g]) => n + " " + g + "g").join(" · "));
-    const how = el("p", "hint", x.r.m);
+    const ih = el("div", "ih");
+    ih.append(el("b", null, x.r.n), el("span", "num", x.mac.kcal + " kcal · " + fmt(x.mac.protein) + "g protein"));
+    const badges = el("div", "tags");
+    const hv = el("span", "have" + (x.missing.length ? "" : " full"), x.missing.length ? "Also needs " + x.missing.map(lcName).join(", ") : "You have everything");
+    badges.appendChild(hv);
+    if (x.r.side) badges.appendChild(el("span", "have", "with " + lcName(x.r.side[0])));
+    const det = el("details");
+    const sm = el("summary", "hint", "Ingredients and method"); sm.style.cursor = "pointer";
+    const ing = el("div", "ing", x.r.i.concat(x.r.side ? [x.r.side] : []).map(([n, g]) => lcName(n) + " " + g + "g").join(" · "));
+    ing.style.marginTop = "6px";
+    det.append(sm, ing, el("p", "hint", x.r.m));
     const acts = el("div", "actions");
     const use = el("button", "btn ghost small", "Log this meal");
     use.onclick = () => {
       clearForm();
       if (TYPES.includes(x.r.t)) { type = x.r.t; renderChips(); }
-      $("mealName").value = x.r.n;
-      $("mealText").value = x.r.i.map(([n, g]) => { const f = foodByName(n); return g + "g " + ((f && f.a && f.a[0]) || n.toLowerCase()); }).join("\n");
+      $("mealName").value = x.r.n + (x.r.side ? " with " + lcName(x.r.side[0]) : "");
+      $("mealText").value = x.r.i.concat(x.r.side ? [x.r.side] : []).map(([n, g]) => { const f = foodByName(n); return g + "g " + ((f && f.a && f.a[0]) || n.toLowerCase()); }).join("\n");
       refreshBreakdown();
       $("formMsg").textContent = "Filled with one serving. Change the grams to what you actually used.";
       show("add");
     };
     acts.appendChild(use);
-    d.append(ih, macroLine(x.mac), hv, ing, how, acts);
+    d.append(ih, badges, det, acts);
     return d;
   }
   function renderIdeas() {
     const box = $("ideasBox"); box.innerHTML = "";
-    if (!S.pantry.length) { box.appendChild(el("div", "empty", "Add a bill photo or a few items and meal ideas appear here.")); return; }
-    const base = (n) => n.replace(/, (raw|cooked|dry|whole|semi-skimmed|skimmed|fat free|firm|plain|fresh)$/i, "");
-    const have = new Set(S.pantry.map(base)), staples = new Set(window.STAPLES);
-    const scored = window.RECIPES.map((r) => {
-      const need = r.i.map((x) => x[0]).filter((n) => !staples.has(n));
-      const missing = need.filter((n) => !have.has(base(n)));
-      return { r, need, missing, mac: recipeMacros(r) };
-    });
+    if (!S.pantry.length) { box.appendChild(el("div", "empty", "Add a bill photo or a few items (rajma, chana, karela, bhindi, paneer…) and dishes appear here.")); return; }
+    const have = new Set(S.pantry.map(baseName)), staples = new Set(window.STAPLES);
     const hp = $("highProtein").checked;
-    const byProtein = (a, b) => (hp ? b.mac.protein - a.mac.protein : 0);
-    const ready = scored.filter((x) => x.missing.length === 0).sort(byProtein);
-    const plates = buildPlates(S.pantry).map((r) => ({ r, need: [], missing: [], mac: recipeMacros(r) }))
-      .filter((p) => !ready.some((x) => x.r.n.toLowerCase() === p.r.n.toLowerCase())).sort(byProtein);
-    const now = ready.concat(plates);
-    const oneAway = scored.filter((x) => x.missing.length === 1 && x.need.length > 1).sort(byProtein).slice(0, 8);
-
-    const h = el("div", "eyebrow", "You can make these now · " + now.length);
-    box.appendChild(h);
-    if (now.length) now.forEach((x) => box.appendChild(ideaCard(x)));
-    else box.appendChild(el("div", "empty", "Nothing can be made from only these items yet. Add a protein (eggs, paneer, chicken, dal) and a carb or vegetable."));
-
-    if (oneAway.length) {
+    const groups = new Map(); // pantry item -> dishes
+    window.RECIPES.forEach((r) => {
+      const owner = S.pantry.find((p) => r.main.some((m) => baseName(m) === baseName(p)));
+      if (!owner) return;
+      const missing = r.i.map((x) => x[0]).filter((n, k, a) => a.indexOf(n) === k && !staples.has(n) && !have.has(baseName(n)));
+      const item = { r, missing, mac: recipeMacros(r) };
+      if (!groups.has(owner)) groups.set(owner, []);
+      groups.get(owner).push(item);
+    });
+    const total = Array.from(groups.values()).reduce((a, g) => a + g.length, 0);
+    box.appendChild(el("div", "eyebrow", total ? total + " dishes from your groceries" : "No dishes found yet"));
+    let opened = 0;
+    S.pantry.forEach((p) => {
+      const list = groups.get(p); if (!list) return;
+      list.sort((a, b) => (a.missing.length - b.missing.length) || ((a.r.cuisine === "Indian" ? 0 : 1) - (b.r.cuisine === "Indian" ? 0 : 1)) || (hp ? b.mac.protein - a.mac.protein : 0));
       const det = el("details", "card");
-      const sum = el("summary", null, "Need just one more item · " + oneAway.length + " ideas");
-      sum.style.fontWeight = "700"; sum.style.cursor = "pointer";
+      if (opened < 3) det.open = true; opened++;
+      const sum = el("summary"); sum.style.cssText = "cursor:pointer;display:flex;justify-content:space-between;align-items:baseline;gap:8px";
+      const ready = list.filter((x) => !x.missing.length).length;
+      sum.append(el("h2", null, "With " + lcName(p)), el("span", "hint", list.length + " dish" + (list.length > 1 ? "es" : "") + (ready ? " · " + ready + " ready" : "")));
       det.appendChild(sum);
-      const inner = el("div"); inner.style.cssText = "display:flex;flex-direction:column;gap:12px;margin-top:12px";
-      oneAway.forEach((x) => inner.appendChild(ideaCard(x)));
+      const inner = el("div"); inner.style.cssText = "display:flex;flex-direction:column;gap:10px;margin-top:4px";
+      list.forEach((x) => inner.appendChild(ideaCard(x)));
       det.appendChild(inner);
       box.appendChild(det);
+    });
+    const unused = S.pantry.filter((p) => !groups.has(p) && !staples.has(p));
+    if (!total) {
+      const plates = buildPlates(S.pantry).map((r) => ({ r: { ...r, side: null }, missing: [], mac: recipeMacros(r) }));
+      if (plates.length) plates.forEach((x) => box.appendChild(ideaCard(x)));
+      else box.appendChild(el("div", "empty", "No dish uses these items yet. Try adding a main ingredient such as rajma, chana, dal, paneer, eggs, chicken, bhindi or karela."));
+    } else if (unused.length) {
+      box.appendChild(el("p", "hint", "Used in other dishes or as basics: " + unused.map(lcName).join(", ") + "."));
     }
   }
 

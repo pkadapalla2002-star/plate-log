@@ -28,7 +28,7 @@ window.FOODS = [
   { n: "Chicken breast, cooked", a: ["cooked chicken", "grilled chicken", "roast chicken", "cooked chicken breast"], k: 165, p: 31, c: 0, f: 3.6, fb: 0, each: 140 },
   { n: "Chicken thigh, raw", a: ["chicken thigh", "chicken thighs", "boneless thigh"], k: 121, p: 19.7, c: 0, f: 4.1, fb: 0, each: 100 },
   { n: "Mutton (goat)", a: ["mutton", "goat"], k: 143, p: 27, c: 0, f: 3, fb: 0 },
-  { n: "Lamb", a: ["lamb", "lamb mince"], k: 282, p: 16.6, c: 0, f: 23.4, fb: 0 },
+  { n: "Lamb", a: ["lamb", "lamb mince", "keema", "mutton mince"], k: 282, p: 16.6, c: 0, f: 23.4, fb: 0 },
   { n: "Beef mince (10% fat)", a: ["beef mince", "beef", "mince", "minced beef"], k: 176, p: 20, c: 0, f: 10, fb: 0 },
   { n: "Salmon", a: ["salmon", "salmon fillet"], k: 208, p: 20, c: 0, f: 13.4, fb: 0, each: 120 },
   { n: "Tuna, tinned in water", a: ["tuna", "tinned tuna", "canned tuna", "tuna can", "tuna tin"], k: 116, p: 25.5, c: 0, f: 0.8, fb: 0, each: 112, u: { tin: 112, can: 112 } },
@@ -38,10 +38,10 @@ window.FOODS = [
   // Plant protein, pulses
   { n: "Tofu, firm", a: ["tofu"], k: 144, p: 15.8, c: 2.8, f: 8.7, fb: 2.3, each: 100 },
   { n: "Soya chunks, dry", a: ["soya chunks", "soy chunks", "nutrela", "soya"], k: 345, p: 52, c: 33, f: 0.5, fb: 13, u: { cup: 50 } },
-  { n: "Lentils / dal, dry", a: ["dal dry", "dry dal", "lentils dry", "raw dal", "toor dal", "masoor dal", "moong dal", "chana dal", "urad dal", "red lentils"], k: 350, p: 24, c: 60, f: 1.5, fb: 11, u: { cup: 190, tbsp: 12 } },
+  { n: "Lentils / dal, dry", a: ["dal dry", "dry dal", "lentils dry", "raw dal", "toor dal", "masoor dal", "moong dal", "chana dal", "urad dal", "red lentils", "urad", "sabut urad", "whole urad", "kali dal", "toor", "arhar dal", "masoor", "moong", "green moong", "split peas"], k: 350, p: 24, c: 60, f: 1.5, fb: 11, u: { cup: 190, tbsp: 12 } },
   { n: "Lentils / dal, cooked", a: ["dal", "daal", "lentils", "cooked dal", "cooked lentils", "lentil"], k: 116, p: 9, c: 20, f: 0.4, fb: 7.9, u: { cup: 200, bowl: 200, katori: 150 } },
   { n: "Dal tadka", a: ["dal tadka", "dal fry", "tadka dal"], k: 130, p: 6.5, c: 16, f: 4.5, fb: 4, u: { cup: 200, bowl: 200, katori: 150 } },
-  { n: "Chickpeas, cooked", a: ["chickpeas", "chickpea", "chana", "chole", "kabuli chana", "garbanzo"], k: 164, p: 8.9, c: 27.4, f: 2.6, fb: 7.6, u: { cup: 160, bowl: 180, tin: 240, can: 240 } },
+  { n: "Chickpeas, cooked", a: ["chickpeas", "chickpea", "chana", "chole", "kabuli chana", "garbanzo", "kala chana", "black chana", "black chickpeas"], k: 164, p: 8.9, c: 27.4, f: 2.6, fb: 7.6, u: { cup: 160, bowl: 180, tin: 240, can: 240 } },
   { n: "Chickpeas, dry", a: ["dry chickpeas", "raw chickpeas", "dry chana"], k: 364, p: 19, c: 61, f: 6, fb: 17, u: { cup: 200 } },
   { n: "Gram flour (besan)", a: ["besan", "gram flour", "chickpea flour"], k: 387, p: 22, c: 58, f: 6.7, fb: 10, u: { cup: 90, tbsp: 8 } },
   { n: "Kidney beans, cooked", a: ["rajma", "kidney beans", "red kidney beans"], k: 127, p: 8.7, c: 22.8, f: 0.5, fb: 6.4, u: { cup: 177, bowl: 180, tin: 240, can: 240 } },
@@ -100,6 +100,18 @@ window.FOODS = [
   { n: "Coriander leaves", a: ["coriander", "dhania", "cilantro", "coriander leaves"], k: 23, p: 2.1, c: 3.7, f: 0.5, fb: 2.8, u: { handful: 10, tbsp: 2 } },
   { n: "Spring onion", a: ["spring onion", "spring onions", "scallion", "green onion"], k: 32, p: 1.8, c: 7.3, f: 0.2, fb: 2.6, each: 15 },
   { n: "Avocado", a: ["avocado", "avocados"], k: 160, p: 2, c: 8.5, f: 14.7, fb: 6.7, each: 150 },
+
+  { n: "Bitter gourd (karela)", a: ["karela", "kareal", "bitter gourd", "bitter melon", "kerala", "karella"], k: 17, p: 1, c: 3.7, f: 0.2, fb: 2.8, each: 100 },
+  { n: "Fenugreek leaves (methi)", a: ["methi", "fenugreek", "fenugreek leaves", "methi leaves"], k: 49, p: 4.4, c: 6, f: 0.9, fb: 3, u: { bunch: 100, handful: 25, cup: 30 } },
+  { n: "Drumstick (moringa)", a: ["drumstick", "drumsticks", "moringa", "murungakkai", "saijan"], k: 37, p: 2.1, c: 8.5, f: 0.2, fb: 3.2, each: 50 },
+  { n: "Ridge gourd (turai)", a: ["turai", "tori", "ridge gourd", "beerakaya", "luffa"], k: 20, p: 1.2, c: 4.4, f: 0.2, fb: 1.1, each: 200 },
+  { n: "Ivy gourd (tindora)", a: ["tindora", "tondli", "ivy gourd", "kundru", "dondakaya"], k: 18, p: 1.2, c: 3.1, f: 0.1, fb: 1.6, each: 15 },
+  { n: "Pumpkin (kaddu)", a: ["pumpkin", "kaddu", "butternut squash", "squash", "kaddu pumpkin"], k: 26, p: 1, c: 6.5, f: 0.1, fb: 0.5, u: { cup: 120 } },
+  { n: "Radish (mooli)", a: ["mooli", "radish", "daikon", "white radish"], k: 16, p: 0.7, c: 3.4, f: 0.1, fb: 1.6, each: 200 },
+  { n: "Beetroot", a: ["beetroot", "beet", "chukandar"], k: 43, p: 1.6, c: 9.6, f: 0.2, fb: 2.8, each: 120 },
+  { n: "Raw banana (plantain)", a: ["raw banana", "plantain", "kacha kela", "green banana"], k: 122, p: 1.3, c: 32, f: 0.4, fb: 2.3, each: 180 },
+  { n: "Moong sprouts", a: ["sprouts", "moong sprouts", "bean sprouts", "sprouted moong"], k: 30, p: 3, c: 5.9, f: 0.2, fb: 1.8, u: { cup: 100, bowl: 150 } },
+  { n: "Sabudana (tapioca pearls)", a: ["sabudana", "tapioca pearls", "sago"], k: 358, p: 0.2, c: 89, f: 0, fb: 0.9, u: { cup: 150 } },
 
   // Fruit
   { n: "Banana", a: ["banana", "bananas", "kela"], k: 89, p: 1.1, c: 22.8, f: 0.3, fb: 2.6, each: 118 },
@@ -163,4 +175,5 @@ window.UNITS = {
 };
 
 // Items assumed to be in every kitchen when matching recipes.
-window.STAPLES = ["Cooking oil", "Olive oil", "Sugar", "Garlic", "Ginger", "Green chilli", "Coriander leaves", "Lemon / lime"];
+// (Indian kitchen basics: onion, tomato, oil, ghee, garlic, ginger, chilli, coriander, lemon, spices.)
+window.STAPLES = ["Cooking oil", "Olive oil", "Ghee", "Sugar", "Garlic", "Ginger", "Green chilli", "Coriander leaves", "Lemon / lime", "Onion", "Tomato"];
