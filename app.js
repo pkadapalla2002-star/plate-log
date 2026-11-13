@@ -194,6 +194,10 @@
     renderGoals(); renderAll(); renderFavs(); renderPantry(); refreshBreakdown();
   }
 
+  function loadScript(src) {
+    return new Promise((res, rej) => { const el = document.createElement("script"); el.src = src; el.onload = res; el.onerror = () => rej(new Error("couldn't load " + src)); document.head.appendChild(el); });
+  }
+
   /* ---------- GitHub sync ---------- */
   const DEFAULT_REPO = window.PLATE_SYNC_REPO || "";
   function readSync() { try { return JSON.parse(localStorage.getItem(SYNC_KEY)) || {}; } catch (e) { return {}; } }
@@ -371,7 +375,7 @@
     if (v === "add") updateAddFor();
   }
   document.querySelectorAll(".tab").forEach((b) => (b.onclick = () => { if (b.dataset.go === "add" && !editingId) { type = type || guessType(); renderChips(); } show(b.dataset.go); }));
-  window.addEventListener("hashchange", () => show(location.hash.slice(1)));
+  window.addEventListener("hashchange", () => { if (!location.hash.startsWith("#setup=")) show(location.hash.slice(1)); });
   let toastT;
   function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), 2200); }
   function updateAddFor() { $("addFor").textContent = type + " · " + nice(day); }
@@ -981,6 +985,59 @@
   }
   renderAi();
 
+  /* ---------- set up another device (QR / link) ---------- */
+  const b64url = (str) => b64enc(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const unb64url = (s) => b64dec(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4));
+  function setupPayload() {
+    const p = { v: 1 };
+    if (sync.cfg.token && sync.cfg.repo) { p.repo = sync.cfg.repo; p.token = sync.cfg.token; }
+    if (ai.groqKey) p.groq = ai.groqKey;
+    if (ai.claudeKey) p.claude = ai.claudeKey;
+    if (ai.groqModel) p.gm = ai.groqModel;
+    if (ai.claudeModel) p.cm = ai.claudeModel;
+    p.pv = ai.provider;
+    return p;
+  }
+  $("linkShow").onclick = async () => {
+    const p = setupPayload();
+    if (!p.token && !p.groq && !p.claude) { $("linkMsg").textContent = "Turn on sync or photo estimates on this device first. Then the code can copy them to your other device."; return; }
+    const url = location.origin + location.pathname + "#setup=" + b64url(JSON.stringify(p));
+    $("linkText").value = url;
+    try {
+      if (!window.qrcode) await loadScript("https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js");
+      const qr = qrcode(0, "M"); qr.addData(url); qr.make();
+      $("linkQr").innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+      const svg = $("linkQr").querySelector("svg"); if (svg) { svg.style.width = "240px"; svg.style.height = "240px"; }
+    } catch (e) { $("linkQr").innerHTML = ""; $("linkMsg").textContent = "Couldn't draw the code. Use Copy link instead."; }
+    const parts = [p.token ? "sync" : null, p.groq || p.claude ? "photo estimates" : null].filter(Boolean).join(" and ");
+    $("linkMsg").textContent = "This code sets up " + parts + ".";
+    $("linkBox").hidden = false; $("linkShow").hidden = true;
+  };
+  $("linkHide").onclick = () => { $("linkBox").hidden = true; $("linkShow").hidden = false; $("linkQr").innerHTML = ""; $("linkText").value = ""; $("linkMsg").textContent = ""; };
+  $("linkCopy").onclick = async () => {
+    const t = $("linkText").value;
+    try { await navigator.clipboard.writeText(t); toast("Link copied"); }
+    catch (e) { const i = $("linkText"); i.hidden = false; i.select(); $("linkMsg").textContent = "Select the link above and copy it."; }
+  };
+  function consumeSetupLink() {
+    if (!location.hash.startsWith("#setup=")) return false;
+    let p = null;
+    try { p = JSON.parse(unb64url(location.hash.slice(7))); } catch (e) {}
+    history.replaceState(null, "", location.pathname + "#today");
+    if (!p || p.v !== 1) { toast("That setup link didn't work. Show a new code and try again."); return true; }
+    if (p.token && p.repo) { sync.cfg = { token: p.token, repo: p.repo, last: 0 }; writeSync(sync.cfg); }
+    if (p.groq) ai.groqKey = p.groq;
+    if (p.claude) ai.claudeKey = p.claude;
+    if (p.gm) ai.groqModel = p.gm;
+    if (p.cm) ai.claudeModel = p.cm;
+    if (p.pv) ai.provider = p.pv;
+    writeAi(); renderAi();
+    $("syncRepo").value = sync.cfg.repo || DEFAULT_REPO; renderSync();
+    toast("This device is set up" + (p.token ? ". Loading your meals…" : ""));
+    return true;
+  }
+  window.addEventListener("hashchange", () => { if (consumeSetupLink()) { show("today"); sync.run(); } });
+
   /* ================= goals, export ================= */
   function renderGoals() { const g = S.goals; $("gKcal").value = g.kcal; $("gProtein").value = g.protein; $("gCarbs").value = g.carbs; $("gFat").value = g.fat; $("gFibre").value = g.fibre; }
   $("saveGoals").onclick = async () => {
@@ -1020,6 +1077,7 @@
 
   buildIndex(); renderChips(); renderMetricChips();
   loadLocalIntoState();
+  consumeSetupLink();
   show(location.hash.slice(1) || "today");
   initSync();
 

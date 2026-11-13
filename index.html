@@ -11,7 +11,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Plate Log">
-<link rel="manifest" href="manifest.webmanifest?v=8">
+<link rel="manifest" href="manifest.webmanifest?v=9">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -395,6 +395,19 @@ footer { font-size: 0.75rem; color: var(--muted); text-align: center; padding: 4
           <span class="status" id="goalsMsg"></span>
         </div>
       </div>
+      <div class="card" id="linkCard">
+        <h2>Add another device</h2>
+        <p class="hint">Set up your phone, tablet or another laptop in one step. This device shows a code; scan it with the other device's camera and it gets your sync and photo settings automatically.</p>
+        <div class="actions"><button class="btn" id="linkShow">Show setup code</button></div>
+        <div id="linkBox" hidden style="display:flex;flex-direction:column;gap:10px;align-items:center">
+          <div id="linkQr" style="background:#fff;padding:12px;border-radius:14px;line-height:0"></div>
+          <p class="hint" style="text-align:center">Scan with the other device's camera and open the link. No camera? Copy the link and open it on that device.</p>
+          <div class="actions"><button class="btn ghost small" id="linkCopy">Copy link</button><button class="linkbtn" id="linkHide">Hide code</button></div>
+          <input type="text" id="linkText" readonly aria-label="Setup link" hidden>
+          <p class="hint" style="color:var(--over)">This code contains your keys. Only scan it on your own devices and don't share a screenshot of it.</p>
+        </div>
+        <div class="status" id="linkMsg"></div>
+      </div>
       <div class="card" id="aiCard">
         <div class="actions" style="justify-content:space-between"><h2>Photo estimates</h2><span class="have" id="aiState">Off</span></div>
         <p class="hint">For meals you ate out. Your photo and notes are sent to the AI service you pick below, which estimates the calories. Photos aren't stored.</p>
@@ -474,10 +487,10 @@ footer { font-size: 0.75rem; color: var(--muted); text-align: center; padding: 4
     if (s) { s.className = "status warn"; s.textContent = "Something went wrong: " + (e.message || "script error") + ". Pull down to refresh, or close and reopen the app."; }
   });
 </script>
-<script src="config.js?v=8"></script>
-<script src="foods.js?v=8"></script>
-<script src="recipes.js?v=8"></script>
-<script src="eatout.js?v=8"></script>
-<script src="app.js?v=8"></script>
+<script src="config.js?v=9"></script>
+<script src="foods.js?v=9"></script>
+<script src="recipes.js?v=9"></script>
+<script src="eatout.js?v=9"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>
