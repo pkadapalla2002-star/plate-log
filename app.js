@@ -739,9 +739,19 @@
   /* ================= ate out: photo estimate + dish list ================= */
   const AI_KEY = "platelog-ai";
   const SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.3.0/+esm";
-  function readAi() { try { return JSON.parse(localStorage.getItem(AI_KEY)) || {}; } catch (e) { return {}; } }
+  const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+  const GROQ_DEFAULT_MODEL = "qwen/qwen3.8-27b";
+  function readAi() {
+    let a = {};
+    try { a = JSON.parse(localStorage.getItem(AI_KEY)) || {}; } catch (e) {}
+    if (a.key && !a.claudeKey) { a.claudeKey = a.key; a.claudeModel = a.model; a.provider = a.provider || "claude"; delete a.key; delete a.model; }
+    a.provider = a.provider || "groq";
+    return a;
+  }
+  function writeAi() { try { localStorage.setItem(AI_KEY, JSON.stringify(ai)); } catch (e) {} }
   let ai = readAi();
   let mode = "cooked", outImage = null, outSize = 1, mealExtra = {};
+  const aiKeyFor = (p) => (p === "claude" ? ai.claudeKey : ai.groqKey);
   function setMode(m) {
     mode = m;
     document.querySelectorAll("#modeSeg .chip").forEach((b) => b.setAttribute("aria-pressed", b.dataset.mode === m));
@@ -749,24 +759,40 @@
     if (m === "out") renderOutList();
   }
   document.querySelectorAll("#modeSeg .chip").forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
+  function renderAiForm(p) {
+    const claude = p === "claude";
+    $("aiHowGroq").hidden = claude; $("aiHowClaude").hidden = !claude;
+    $("aiKeyLabel").textContent = claude ? "Claude API key" : "Groq API key";
+    $("aiModelRow").hidden = !claude; $("aiAdvanced").hidden = claude;
+    $("aiKeySaved").hidden = !aiKeyFor(p);
+    $("aiOff").hidden = !aiKeyFor(p);
+  }
   function renderAi() {
-    const on = !!ai.key;
-    $("aiState").textContent = on ? "On" : "Off"; $("aiState").className = "have" + (on ? " full" : "");
-    $("aiSetup").hidden = on; $("aiOff").hidden = !on;
-    $("aiSave").textContent = on ? "Save" : "Turn on photo estimates";
-    $("aiModel").value = ai.model || "claude-opus-5-5";
+    const on = !!aiKeyFor(ai.provider);
+    $("aiState").textContent = on ? "On · " + (ai.provider === "claude" ? "Claude" : "Groq (free)") : "Off";
+    $("aiState").className = "have" + (on ? " full" : "");
+    $("aiProvider").value = ai.provider;
+    $("aiModel").value = ai.claudeModel || "claude-opus-5-5";
+    $("aiGroqModel").value = ai.groqModel || GROQ_DEFAULT_MODEL;
+    renderAiForm(ai.provider);
     $("outNoKey").hidden = on; $("outEstimate").hidden = !on;
   }
+  $("aiProvider").onchange = () => renderAiForm($("aiProvider").value);
   $("aiSave").onclick = () => {
-    const k = $("aiKey").value.trim();
-    if (!ai.key && !/^sk-ant-/.test(k)) { $("aiMsg").textContent = "That doesn't look like a Claude API key. It starts with sk-ant-."; return; }
-    ai = { key: k || ai.key, model: $("aiModel").value };
-    try { localStorage.setItem(AI_KEY, JSON.stringify(ai)); } catch (e) {}
-    $("aiKey").value = ""; $("aiMsg").textContent = ""; renderAi(); toast("Photo estimates on");
+    const p = $("aiProvider").value, k = $("aiKey").value.trim();
+    if (k) {
+      if (p === "groq" && !/^gsk_/.test(k)) { $("aiMsg").textContent = "That doesn't look like a Groq key. It starts with gsk_."; return; }
+      if (p === "claude" && !/^sk-ant-/.test(k)) { $("aiMsg").textContent = "That doesn't look like a Claude key. It starts with sk-ant-."; return; }
+      if (p === "groq") ai.groqKey = k; else ai.claudeKey = k;
+    } else if (!aiKeyFor(p)) { $("aiMsg").textContent = "Paste your key first."; return; }
+    ai.provider = p; ai.claudeModel = $("aiModel").value;
+    const gm = $("aiGroqModel").value.trim(); ai.groqModel = gm && gm !== GROQ_DEFAULT_MODEL ? gm : undefined;
+    writeAi(); $("aiKey").value = ""; $("aiMsg").textContent = ""; renderAi(); toast("Photo estimates on");
   };
   $("aiOff").onclick = () => {
-    if ($("aiOff").dataset.armed !== "1") { $("aiOff").dataset.armed = "1"; $("aiOff").textContent = "Tap again to remove"; setTimeout(() => { $("aiOff").dataset.armed = ""; $("aiOff").textContent = "Remove key from this device"; }, 3000); return; }
-    ai = {}; try { localStorage.removeItem(AI_KEY); } catch (e) {} renderAi(); toast("Key removed");
+    if ($("aiOff").dataset.armed !== "1") { $("aiOff").dataset.armed = "1"; $("aiOff").textContent = "Tap again to remove"; setTimeout(() => { $("aiOff").dataset.armed = ""; $("aiOff").textContent = "Remove this key from this device"; }, 3000); return; }
+    if ($("aiProvider").value === "claude") delete ai.claudeKey; else delete ai.groqKey;
+    writeAi(); renderAi(); toast("Key removed");
   };
 
   // Shrink the photo before sending: smaller upload, fewer tokens, same accuracy.
@@ -803,13 +829,12 @@
     const place = $("outPlace").value.trim(), note = $("outNote").value.trim();
     if (!outImage && !note) { $("outMsg").textContent = "Add a photo, or describe what you ate in the box above."; return; }
     const btn = $("outEstimate"), prog = $("outProg"), bar = prog.querySelector("i");
-    btn.disabled = true; btn.textContent = place ? "Checking the menu and estimating…" : "Estimating…";
+    btn.disabled = true; btn.textContent = place && ai.provider === "claude" ? "Checking the menu and estimating…" : "Estimating…";
     $("outMsg").classList.remove("warn"); $("outMsg").textContent = ""; $("outResult").innerHTML = "";
     prog.hidden = false; bar.style.width = "15%";
     const tick = setInterval(() => { const w = parseFloat(bar.style.width); if (w < 90) bar.style.width = w + 4 + "%"; }, 800);
     try {
-      const { default: Anthropic } = await import(SDK_URL);
-      const client = new Anthropic({ apiKey: ai.key, dangerouslyAllowBrowser: true });
+      const useGroq = ai.provider !== "claude";
       const prompt =
         "Estimate the nutrition of a meal someone ate out.\n" +
         "Where they ate: " + (place || "not given") + "\n" +
@@ -817,7 +842,7 @@
         "They live in London, UK, so assume UK restaurants and portions unless the place says otherwise.\n\n" +
         "How to work it out:\n" +
         "1. " + (outImage ? "Identify each item in the photo and estimate its portion from visual cues (plate size, cutlery, typical restaurant portions)." : "Work from their description.") + "\n" +
-        "2. " + (place ? "If the place publishes nutrition (most UK chains do), search for the dish's published calories and use them, adjusted for what was actually eaten. Prefer the restaurant's own site." : "No place was given, so use typical restaurant values.") + "\n" +
+        "2. " + (place ? (useGroq ? "If you know this place's published nutrition for the dish (many UK chains publish it), use it, adjusted for what was actually eaten; set source to \"menu\" only if you are confident of those figures." : "If the place publishes nutrition (most UK chains do), search for the dish's published calories and use them, adjusted for what was actually eaten. Prefer the restaurant's own site.") : "No place was given, so use typical restaurant values.") + "\n" +
         "3. Otherwise use typical restaurant values. Restaurant food usually has more oil, butter and cream than home cooking.\n" +
         "4. Apply their notes (for example 'ate half' halves everything).\n\n" +
         "Reply with only this JSON object and nothing else:\n" +
@@ -825,12 +850,36 @@
         '"total": {"kcal": number, "protein": number, "carbs": number, "fat": number, "fibre": number}, ' +
         '"source": "menu" or "estimate", "source_name": string or null, "source_url": string or null, "confidence": "high" or "medium" or "low", "note": "one short sentence on what you assumed"}\n' +
         "Grams for macros. Single numbers, no ranges.";
+      let out;
+      if (useGroq) {
+        const content = [{ type: "text", text: prompt }];
+        if (outImage) content.push({ type: "image_url", image_url: { url: outImage.dataUrl } });
+        const r = await fetch(GROQ_URL, {
+          method: "POST",
+          headers: { Authorization: "Bearer " + ai.groqKey, "Content-Type": "application/json" },
+          body: JSON.stringify({ model: ai.groqModel || GROQ_DEFAULT_MODEL, messages: [{ role: "user", content }], response_format: { type: "json_object" }, temperature: 0.3, max_completion_tokens: 3000 }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          const m = (j.error && j.error.message) || "Groq said " + r.status;
+          const code = j.error && j.error.code;
+          if (r.status === 401) throw Object.assign(new Error("key"), { status: 401 });
+          if (r.status === 429) throw Object.assign(new Error(m), { status: 429 });
+          if (code === "model_decommissioned" || code === "model_not_found" || /model.*(not exist|decommission|not found|does not support)/i.test(m))
+            throw new Error("Groq has changed its photo model. Open Progress → Photo estimates → Advanced and enter a current vision model from console.groq.com/docs/vision.");
+          throw Object.assign(new Error(m), { status: r.status });
+        }
+        const text = ((j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "").replace(/<think>[\s\S]*?<\/think>/g, "");
+        out = extractJson(text);
+      } else {
+      const { default: Anthropic } = await import(SDK_URL);
+      const client = new Anthropic({ apiKey: ai.claudeKey, dangerouslyAllowBrowser: true });
       const content = [];
       if (outImage) content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: outImage.b64 } });
       content.push({ type: "text", text: prompt });
       const messages = [{ role: "user", content }];
       const params = {
-        model: ai.model || "claude-opus-5-5",
+        model: ai.claudeModel || "claude-opus-5-5",
         max_tokens: 16000,
         output_config: { effort: "medium" },
         betas: ["server-side-fallback-2026-07-01"],
@@ -846,17 +895,18 @@
       }
       if (res.stop_reason === "refusal") throw new Error("Claude declined to estimate this one. Try the dish list instead.");
       const text = res.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
-      const out = extractJson(text);
+      out = extractJson(text);
+      }
       if (!out || !out.total) throw new Error("The estimate came back in a form the site couldn't read. Try again.");
       renderEstimate(out, place);
     } catch (e) {
       let msg = e && e.message ? e.message : "Something went wrong.";
       const st = e && e.status;
-      if (st === 401) msg = "Your Claude API key was rejected. Check it under Progress → Photo estimates.";
-      else if (st === 429) msg = "Too many requests right now. Wait a minute and try again.";
+      if (st === 401) msg = "Your " + (ai.provider === "claude" ? "Claude" : "Groq") + " key was rejected. Check it under Progress → Photo estimates.";
+      else if (st === 429) msg = ai.provider === "claude" ? "Too many requests right now. Wait a minute and try again." : "You have hit Groq's free limit for now. Wait a minute (or until tomorrow if you have done a lot today) and try again.";
       else if (st === 400 && /credit|balance|billing/i.test(msg)) msg = "Your Anthropic account has no credit left. Add credit at console.anthropic.com → Billing.";
-      else if (st >= 500) msg = "Claude is busy right now. Try again in a minute.";
-      else if (/Failed to fetch|NetworkError|Load failed|import/i.test(msg)) msg = "Couldn't reach Claude. Check your internet connection.";
+      else if (st >= 500) msg = (ai.provider === "claude" ? "Claude" : "Groq") + " is busy right now. Try again in a minute.";
+      else if (/Failed to fetch|NetworkError|Load failed|import/i.test(msg)) msg = "Couldn't reach " + (ai.provider === "claude" ? "Claude" : "Groq") + ". Check your internet connection.";
       $("outMsg").classList.add("warn"); $("outMsg").textContent = msg;
     } finally {
       clearInterval(tick); prog.hidden = true; btn.disabled = false; btn.textContent = "Estimate calories";

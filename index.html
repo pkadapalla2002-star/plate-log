@@ -11,7 +11,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Plate Log">
-<link rel="manifest" href="manifest.webmanifest?v=7">
+<link rel="manifest" href="manifest.webmanifest?v=8">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -276,7 +276,7 @@ footer { font-size: 0.75rem; color: var(--muted); text-align: center; padding: 4
           <input type="text" id="outNote" placeholder="ate half, shared the naan, large portion…" autocomplete="off">
         </label>
         <button class="btn block" id="outEstimate">Estimate calories</button>
-        <p class="hint" id="outNoKey" hidden>To estimate from a photo, add your Claude API key under <b>Progress → Photo estimates</b>. Or pick a dish from the list below.</p>
+        <p class="hint" id="outNoKey" hidden>To estimate from a photo, add a free Groq key under <b>Progress → Photo estimates</b> (2 minutes, no card). Or pick a dish from the list below.</p>
         <div class="progress" id="outProg" hidden><i></i></div>
         <div class="status" id="outMsg"></div>
         <div id="outResult"></div>
@@ -397,23 +397,37 @@ footer { font-size: 0.75rem; color: var(--muted); text-align: center; padding: 4
       </div>
       <div class="card" id="aiCard">
         <div class="actions" style="justify-content:space-between"><h2>Photo estimates</h2><span class="have" id="aiState">Off</span></div>
-        <p class="hint">For meals you ate out. A photo (plus where you ate) is sent to Claude, which estimates the calories and checks the restaurant's published nutrition online when it can. You pay Anthropic directly: about 3p per photo, or about 10p when it looks up a restaurant. Only you see the result.</p>
-        <div id="aiSetup" style="display:flex;flex-direction:column;gap:12px">
-          <label for="aiKey">Claude API key
-            <input type="text" id="aiKey" placeholder="sk-ant-…" autocomplete="off" autocapitalize="off" spellcheck="false">
-          </label>
-          <p class="hint">Get one at <b>console.anthropic.com</b> → API Keys. The key is stored only in this browser. It is never synced.</p>
-        </div>
-        <label for="aiModel">Accuracy
+        <p class="hint">For meals you ate out. Your photo and notes are sent to the AI service you pick below, which estimates the calories. Photos aren't stored.</p>
+        <label for="aiProvider">Service
+          <select id="aiProvider">
+            <option value="groq">Groq: free, good estimates</option>
+            <option value="claude">Claude: paid (about 3–10p per photo), most accurate, checks restaurant menus online</option>
+          </select>
+        </label>
+        <p class="hint" id="aiHowGroq">Free key: sign up at <b>console.groq.com</b> (no card needed) → <b>API Keys</b> → <b>Create API Key</b>. It starts with <span class="num">gsk_</span>.</p>
+        <p class="hint" id="aiHowClaude" hidden>Key from <b>console.anthropic.com</b> → API Keys (needs a little credit under Billing). It starts with <span class="num">sk-ant-</span>.</p>
+        <label for="aiKey"><span id="aiKeyLabel">Groq API key</span>
+          <input type="text" id="aiKey" placeholder="Paste your key" autocomplete="off" autocapitalize="off" spellcheck="false">
+        </label>
+        <p class="hint" id="aiKeySaved" hidden>A key is saved for this service on this device.</p>
+        <label for="aiModel" id="aiModelRow" hidden>Accuracy
           <select id="aiModel">
             <option value="claude-opus-5-5">Best (Claude Opus 5.5)</option>
             <option value="claude-sonnet-5-5">Cheaper, about half the cost (Claude Sonnet 5.5)</option>
           </select>
         </label>
+        <details id="aiAdvanced">
+          <summary class="hint" style="cursor:pointer">Advanced</summary>
+          <label for="aiGroqModel" style="margin-top:8px">Groq photo model
+            <input type="text" id="aiGroqModel" autocomplete="off" autocapitalize="off" spellcheck="false">
+          </label>
+          <p class="hint">Only change this if the site tells you Groq retired the model. Pick a model marked “vision” at console.groq.com/docs/vision.</p>
+        </details>
         <div class="actions">
-          <button class="btn" id="aiSave">Turn on photo estimates</button>
-          <button class="linkbtn danger" id="aiOff" hidden>Remove key from this device</button>
+          <button class="btn" id="aiSave">Save</button>
+          <button class="linkbtn danger" id="aiOff" hidden>Remove this key from this device</button>
         </div>
+        <p class="hint">Keys stay in this browser only and are never synced. Set them up once on each device.</p>
         <div class="status" id="aiMsg"></div>
       </div>
       <div class="card" id="syncCard">
@@ -460,10 +474,10 @@ footer { font-size: 0.75rem; color: var(--muted); text-align: center; padding: 4
     if (s) { s.className = "status warn"; s.textContent = "Something went wrong: " + (e.message || "script error") + ". Pull down to refresh, or close and reopen the app."; }
   });
 </script>
-<script src="config.js?v=7"></script>
-<script src="foods.js?v=7"></script>
-<script src="recipes.js?v=7"></script>
-<script src="eatout.js?v=7"></script>
-<script src="app.js?v=7"></script>
+<script src="config.js?v=8"></script>
+<script src="foods.js?v=8"></script>
+<script src="recipes.js?v=8"></script>
+<script src="eatout.js?v=8"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>
