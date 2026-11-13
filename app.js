@@ -269,29 +269,30 @@
     const box = $("typeChips"); box.innerHTML = "";
     TYPES.forEach((t) => {
       const b = el("button", "chip", t); b.setAttribute("aria-pressed", t === type);
-      b.onclick = () => { type = t; renderChips(); };
+      b.onclick = () => { type = t; renderChips(); updateAddFor(); };
       box.appendChild(b);
     });
   }
   function renderFacts() {
     const list = S.meals.filter((m) => m.date === day);
     const t = totals(list), g = S.goals;
-    $("factsSub").textContent = nice(day) + " · " + list.length + (list.length === 1 ? " meal" : " meals");
-    $("kcalBig").textContent = t.kcal;
-    const left = Math.round(g.kcal - t.kcal);
-    $("kcalOf").textContent = "of " + g.kcal + " kcal · " + (left >= 0 ? left + " left" : -left + " over");
-    $("macroRows").innerHTML = MACROS.map((m) => {
+    const pct = g.kcal ? t.kcal / g.kcal : 0, left = Math.round(g.kcal - t.kcal);
+    const R = 56, C = 2 * Math.PI * R, over = pct > 1;
+    $("ring").innerHTML = '<svg viewBox="0 0 132 132" aria-hidden="true"><circle cx="66" cy="66" r="' + R + '" fill="none" style="stroke:var(--track)" stroke-width="12"/>' +
+      '<circle class="val" cx="66" cy="66" r="' + R + '" fill="none" style="stroke:' + (over ? "var(--over)" : "var(--accent)") + '" stroke-width="12" stroke-linecap="round" stroke-dasharray="' + C +
+      '" stroke-dashoffset="' + (C * (1 - Math.min(pct, 1))) + '"/></svg><div class="center"><div class="big">' + Math.abs(left) + '</div><div class="small">' +
+      (left >= 0 ? "kcal left" : "kcal over") + "</div></div>";
+    $("ring").setAttribute("aria-label", t.kcal + " of " + g.kcal + " kcal eaten");
+    $("macroRows").innerHTML = MACROS.filter((m) => m.k !== "fibre").map((m) => {
       const goal = g[m.k] || 0, v = t[m.k], p = goal ? Math.round((v / goal) * 100) : 0;
-      const over = (m.k === "carbs" || m.k === "fat") && p > 100;
-      return '<div class="row"><div class="name">' + m.name + " <span>" + fmt(v) + "g / " + goal + 'g</span></div><div class="pct' + (over ? " over" : "") + '">' + p +
-        '%</div><div class="bar"><i style="width:' + Math.min(p, 100) + "%;background:" + m.color + '"></i></div></div>';
+      return '<div class="mb"><div class="top"><b>' + m.name.replace("Carbohydrate", "Carbs") + "</b><span><em>" + fmt(v) + "</em> / " + goal + 'g</span></div><div class="bar"><i style="width:' +
+        Math.min(p, 100) + "%;background:" + m.color + '"></i></div></div>';
     }).join("");
     const e = t.protein * 4 + t.carbs * 4 + t.fat * 9;
     const pc = (x) => Math.round((x / e) * 100);
-    $("energySplit").innerHTML = e > 0 ? "<span>Energy split</span>" +
-      '<span><i class="sw" style="background:var(--protein)"></i>Protein <b>' + pc(t.protein * 4) + "%</b></span>" +
-      '<span><i class="sw" style="background:var(--carbs)"></i>Carbs <b>' + pc(t.carbs * 4) + "%</b></span>" +
-      '<span><i class="sw" style="background:var(--fat)"></i>Fat <b>' + pc(t.fat * 9) + "%</b></span>" : "";
+    $("energySplit").innerHTML = "<span>Eaten <b>" + t.kcal + "</b> of " + g.kcal + " kcal</span><span>Fibre <b>" + fmt(t.fibre) + "</b> / " + g.fibre + "g</span>" +
+      (e > 0 ? '<span><i class="sw" style="background:var(--protein)"></i>' + pc(t.protein * 4) + '% <i class="sw" style="background:var(--carbs);margin-left:6px"></i>' + pc(t.carbs * 4) +
+        '% <i class="sw" style="background:var(--fat);margin-left:6px"></i>' + pc(t.fat * 9) + "% of energy</span>" : "");
   }
   function macroLine(o) {
     const d = el("div", "mac");
@@ -302,18 +303,18 @@
   }
   function renderLog() {
     const list = S.meals.filter((m) => m.date === day).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-    $("logTitle").textContent = "Meals · " + nice(day);
     const box = $("mealList"); box.innerHTML = "";
-    if (!list.length) {
-      box.appendChild(el("div", "empty", "Nothing logged for this day yet. Type your ingredients in the form above and tap Add to log."));
-      return;
-    }
     TYPES.forEach((t) => {
-      const group = list.filter((m) => m.type === t); if (!group.length) return;
+      const group = list.filter((m) => m.type === t);
       const gt = totals(group);
-      const g = el("div", "mealgroup");
-      const h = el("h3"); h.append(el("span", null, t), el("span", "num", gt.kcal + " kcal · " + fmt(gt.protein) + "g protein"));
-      g.appendChild(h);
+      const card = el("div", "card meal");
+      const head = el("div", "mhead");
+      const title = el("div", "mtitle"); title.append(el("h2", null, t));
+      if (group.length) title.appendChild(el("span", null, gt.kcal + " kcal · " + fmt(gt.protein) + "g protein"));
+      const add = el("button", "addbtn", "+ Add"); add.setAttribute("aria-label", "Add to " + t);
+      add.onclick = () => { clearForm(); type = t; renderChips(); show("add"); setTimeout(() => $("mealText").focus(), 50); };
+      head.append(title, add); card.appendChild(head);
+      if (!group.length) card.appendChild(el("div", "mempty", t === "Snack" ? "No snacks logged" : "Nothing logged yet"));
       group.forEach((m) => {
         const row = el("div", "entry");
         row.append(el("div", "what", m.name || "Meal"), el("div", "kc", Math.round(num(m.kcal)) + " kcal"), macroLine(m));
@@ -321,15 +322,49 @@
         const ed = el("button", "linkbtn", "Edit"); ed.onclick = () => startEdit(m);
         const del = el("button", "linkbtn danger", "Delete");
         del.onclick = async () => {
-          if (del.dataset.armed !== "1") { del.dataset.armed = "1"; del.textContent = "Tap again to delete"; setTimeout(() => { del.dataset.armed = ""; del.textContent = "Delete"; }, 3000); return; }
-          try { await store.del("meals", m.id); } catch (e) { status("Couldn't delete: " + e.message, true); }
+          if (del.dataset.armed !== "1") { del.dataset.armed = "1"; del.textContent = "Tap to confirm"; setTimeout(() => { del.dataset.armed = ""; del.textContent = "Delete"; }, 3000); return; }
+          try { await store.del("meals", m.id); toast("Deleted"); } catch (e) { status("Couldn't delete: " + e.message, true); }
         };
         ops.append(ed, del); row.appendChild(ops);
         if (m.ingredients && m.ingredients.replace(/\n/g, ", ") !== m.name) row.appendChild(el("div", "ing", m.ingredients.split("\n").filter(Boolean).join(" · ")));
-        g.appendChild(row);
+        card.appendChild(row);
       });
-      box.appendChild(g);
+      box.appendChild(card);
     });
+  }
+
+  /* ================= views, week strip, toast ================= */
+  const VIEWS = ["today", "add", "groceries", "progress"];
+  function show(v) {
+    if (!VIEWS.includes(v)) v = "today";
+    document.querySelectorAll(".view").forEach((s) => (s.hidden = s.dataset.view !== v));
+    document.querySelectorAll(".tab").forEach((b) => (b.dataset.go === v ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current")));
+    if (location.hash !== "#" + v) history.replaceState(null, "", "#" + v);
+    window.scrollTo(0, 0);
+    if (v === "add") updateAddFor();
+  }
+  document.querySelectorAll(".tab").forEach((b) => (b.onclick = () => { if (b.dataset.go === "add" && !editingId) { type = type || guessType(); renderChips(); } show(b.dataset.go); }));
+  window.addEventListener("hashchange", () => show(location.hash.slice(1)));
+  let toastT;
+  function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), 2200); }
+  function updateAddFor() { $("addFor").textContent = type + " · " + nice(day); }
+  function weekStart(ds) { const d = new Date(ds + "T12:00:00"); const wd = (d.getDay() + 6) % 7; return shift(ds, -wd); }
+  function renderStrip() {
+    const box = $("weekStrip"); box.innerHTML = "";
+    const start = weekStart(day), t = todayStr();
+    for (let i = 0; i < 7; i++) {
+      const d = shift(start, i), dd = new Date(d + "T12:00:00");
+      const kc = totals(S.meals.filter((m) => m.date === d)).kcal;
+      const b = el("button", "wd" + (d === day ? " sel" : "") + (d === t ? " today" : ""));
+      b.disabled = d > t;
+      b.setAttribute("aria-label", dd.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }) + ", " + kc + " kcal");
+      b.append(el("span", "l", dd.toLocaleDateString(undefined, { weekday: "short" }).slice(0, 3)), el("span", "d", String(dd.getDate())));
+      const dot = el("span", "dot"); const fill = el("i"); fill.style.width = Math.min(100, S.goals.kcal ? (kc / S.goals.kcal) * 100 : 0) + "%"; dot.appendChild(fill); b.appendChild(dot);
+      b.onclick = () => { day = d; renderAll(); };
+      box.appendChild(b);
+    }
+    const label = new Date(day + "T12:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" });
+    $("dateText").textContent = day === t ? "Today" : day === shift(t, -1) ? "Yesterday" : label;
   }
 
   /* ================= render: week chart ================= */
@@ -372,9 +407,10 @@
       : '<span class="muted">No meals logged this week yet.</span>';
   }
   function renderAll() {
-    $("dayPick").value = day;
-    $("nextDay").disabled = day >= todayStr();
-    renderFacts(); renderLog(); renderWeek();
+    $("dayPick").value = day; $("dayPick").max = todayStr();
+    $("nextDay").disabled = weekStart(day) >= weekStart(todayStr());
+    renderStrip(); renderFacts(); renderLog(); renderWeek();
+    if (!$("addFor").closest(".view").hidden) updateAddFor();
   }
 
   /* ================= logging form ================= */
@@ -385,7 +421,7 @@
       return r;
     });
     const box = $("breakdown");
-    if (!parsed.length) { box.hidden = true; if (!macroManual) fillMacros({}); return; }
+    if (!parsed.length) { box.hidden = true; $("liveTotal").hidden = true; if (!macroManual) fillMacros({}); return; }
     box.hidden = false;
     const rows = parsed.map((r) => (r.food ? { ...r, ...macrosFor(r.food, r.grams) } : r));
     const t = totals(rows.filter((r) => r.food));
@@ -419,6 +455,8 @@
     tf.appendChild(tr); tbl.appendChild(tf);
     box.innerHTML = ""; box.appendChild(tbl);
     if (!macroManual) fillMacros(t);
+    $("liveTotal").hidden = false; $("liveKcal").textContent = t.kcal;
+    const lm = $("liveMac"); lm.innerHTML = ""; lm.append(...macroLine(t).childNodes);
   }
   function fillMacros(o) {
     $("fKcal").value = o.kcal ?? ""; $("fProtein").value = o.protein ?? ""; $("fCarbs").value = o.carbs ?? "";
@@ -444,7 +482,7 @@
   function startEdit(m) {
     editingId = m.id; type = m.type || type; renderChips(); loadIntoForm(m);
     $("formTitle").textContent = "Edit meal"; $("saveBtn").textContent = "Save changes"; $("cancelEdit").hidden = false;
-    $("formTitle").scrollIntoView({ behavior: "smooth", block: "start" });
+    show("add");
   }
   async function saveMeal() {
     const mac = readMacros();
@@ -462,8 +500,10 @@
         const ex = S.favs.find((f) => (f.name || "").toLowerCase() === name.toLowerCase());
         await store.put("favs", { id: ex ? ex.id : undefined, name, ingredients: ing, overrides, ...mac });
       }
-      $("formMsg").textContent = (editingId ? "Updated " : "Added to ") + type.toLowerCase() + ".";
-      clearForm();
+      const was = editingId;
+      clearForm(); $("formMsg").textContent = "";
+      toast((was ? "Updated " : "Added to ") + type.toLowerCase());
+      show("today");
     } catch (e) { $("formMsg").textContent = "Couldn't save: " + e.message; }
     finally { $("saveBtn").disabled = false; }
   }
@@ -590,7 +630,7 @@
         $("mealText").value = x.r.i.map(([n, g]) => { const f = foodByName(n); return g + "g " + ((f && f.a && f.a[0]) || n.toLowerCase()); }).join("\n");
         refreshBreakdown();
         $("formMsg").textContent = "Filled with one serving. Change the grams to what you actually used.";
-        $("formTitle").scrollIntoView({ behavior: "smooth", block: "start" });
+        show("add");
       };
       acts.appendChild(use);
       d.append(ih, macroLine(x.mac), hv, ing, how, acts);
@@ -615,14 +655,13 @@
   };
 
   /* ================= wiring ================= */
-  $("prevDay").onclick = () => { day = shift(day, -1); renderAll(); };
-  $("nextDay").onclick = () => { if (day < todayStr()) { day = shift(day, 1); renderAll(); } };
-  $("todayBtn").onclick = () => { day = todayStr(); renderAll(); };
+  $("prevDay").onclick = () => { day = shift(day, -7); renderAll(); };
+  $("nextDay").onclick = () => { const n = shift(day, 7), t = todayStr(); day = n > t ? t : n; renderAll(); };
   $("dayPick").onchange = (e) => { if (e.target.value) { day = e.target.value; renderAll(); } };
   let deb; $("mealText").addEventListener("input", () => { clearTimeout(deb); macroManual = false; deb = setTimeout(refreshBreakdown, 250); });
   ["fKcal", "fProtein", "fCarbs", "fFat", "fFibre"].forEach((id) => $(id).addEventListener("input", () => (macroManual = true)));
   $("saveBtn").onclick = saveMeal;
-  $("cancelEdit").onclick = () => { clearForm(); $("formMsg").textContent = ""; };
+  $("cancelEdit").onclick = () => { clearForm(); $("formMsg").textContent = ""; show("today"); };
   $("savedPick").onchange = (e) => { const f = S.favs.find((x) => x.id === e.target.value); if (f) loadIntoForm(f); e.target.value = ""; };
   $("billFile").onchange = (e) => { const f = e.target.files && e.target.files[0]; if (f) readBill(f); };
   $("pantryAdd").addEventListener("keydown", (e) => {
@@ -638,6 +677,7 @@
 
   buildIndex(); renderChips(); renderMetricChips();
   loadLocalIntoState();
+  show(location.hash.slice(1) || "today");
   initFirebase();
 
   // expose parser for testing
