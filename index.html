@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Plate Log</title>
+<meta name="description" content="Log meals by ingredient, see calories and macros, and turn a grocery bill into meal ideas.">
+<meta name="theme-color" content="#2f6b3f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Plate Log">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/* One narrow column, phone first: a Nutrition Facts panel for the day, the logging form, groceries, the log, the week. */
+:root {
+  --bg: #f6f7f3; --panel: #ffffff; --ink: #18201b; --muted: #5d685f; --rule: #18201b; --hair: #d9ddd5;
+  --accent: #2f6b3f; --accent-ink: #ffffff; --protein: #1f6f78; --carbs: #c07a12; --fat: #8a4a7a; --fibre: #5b7d2a;
+  --over: #b23a2a; --track: #e8ebe4; --warnbg: #fbf1e6;
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121613; --panel: #1b201c; --ink: #e9ede6; --muted: #9ba69c; --rule: #e9ede6; --hair: #333b35;
+    --accent: #6fbf83; --accent-ink: #0f1a12; --protein: #5cc1cc; --carbs: #e9a646; --fat: #cf8dbf; --fibre: #9cc463;
+    --over: #ef7a68; --track: #2a312c; --warnbg: #2c2418; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: calc(20px + env(safe-area-inset-top, 0px)); padding-bottom: calc(48px + env(safe-area-inset-bottom, 0px));
+}
+[hidden] { display: none !important; }
+.wrap { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+h1, h2 { font-family: var(--display); margin: 0; text-wrap: balance; }
+h1 { font-weight: 900; font-stretch: 112%; font-size: 1.7rem; letter-spacing: -0.01em; }
+h2 { font-weight: 800; font-size: 1.05rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; }
+.datebar { display: flex; align-items: center; gap: 6px; }
+.iconbtn { border: 1px solid var(--hair); background: var(--panel); border-radius: 8px; width: 38px; height: 38px; display: grid; place-items: center; font-size: 1.1rem; }
+.iconbtn:disabled { opacity: 0.4; cursor: default; }
+.datebar input[type=date] { border: 1px solid var(--hair); background: var(--panel); border-radius: 8px; height: 38px; padding: 0 8px; min-width: 0; }
+.todaybtn { border: 1px solid var(--hair); background: var(--panel); border-radius: 8px; height: 38px; padding: 0 12px; font-weight: 600; }
+.status { font-size: 0.82rem; color: var(--muted); min-height: 1.2em; }
+.status.warn { color: var(--over); }
+.account { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 0.85rem; }
+
+.facts { background: var(--panel); border: 2px solid var(--rule); padding: 12px 14px 14px; }
+.facts .ftitle { font-family: var(--display); font-weight: 900; font-stretch: 125%; font-size: 1.9rem; line-height: 1; letter-spacing: -0.01em; }
+.facts .sub { font-size: 0.85rem; color: var(--muted); padding-bottom: 6px; border-bottom: 10px solid var(--rule); }
+.cal { display: flex; justify-content: space-between; align-items: end; gap: 10px; padding: 6px 0; border-bottom: 5px solid var(--rule); }
+.cal .lbl { font-family: var(--display); font-weight: 900; font-size: 1.5rem; }
+.cal .big { font-family: var(--display); font-weight: 900; font-size: 2.4rem; line-height: 1; font-variant-numeric: tabular-nums; text-align: right; }
+.cal .of { font-size: 0.85rem; color: var(--muted); text-align: right; }
+.dvhead { text-align: right; font-size: 0.75rem; font-weight: 700; padding: 4px 0; border-bottom: 1px solid var(--rule); }
+.row { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 6px 0; border-bottom: 1px solid var(--rule); align-items: baseline; }
+.row:last-child { border-bottom: 0; }
+.row .name { font-weight: 800; }
+.row .name span { font-weight: 400; font-family: var(--mono); font-size: 0.9rem; }
+.row .pct { font-weight: 800; font-family: var(--mono); }
+.bar { grid-column: 1 / -1; height: 6px; background: var(--track); border-radius: 3px; overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: 3px; }
+.pct.over { color: var(--over); }
+.split { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.8rem; color: var(--muted); padding-top: 8px; }
+.split b { font-family: var(--mono); color: var(--ink); font-weight: 600; }
+.sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; }
+
+.card { background: var(--panel); border: 1px solid var(--hair); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--hair); background: transparent; border-radius: 999px; padding: 6px 12px; font-weight: 600; font-size: 0.9rem; }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+label { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+input[type=text], input[type=number], input[type=email], textarea, select {
+  border: 1px solid var(--hair); background: var(--bg); border-radius: 8px; padding: 9px 10px; width: 100%; min-width: 0;
+  font-size: 1rem; text-transform: none; letter-spacing: 0; color: var(--ink); font-weight: 400;
+}
+textarea { resize: vertical; min-height: 64px; }
+.macros { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 460px) { .macros { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.macros input { font-family: var(--mono); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn { border: 0; background: var(--accent); color: var(--accent-ink); border-radius: 8px; padding: 10px 16px; font-weight: 700; }
+.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--hair); }
+.btn.small { padding: 6px 10px; font-size: 0.85rem; }
+.btn:disabled { opacity: 0.55; cursor: default; }
+.check { flex-direction: row; align-items: center; gap: 6px; text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 0.9rem; color: var(--ink); }
+.hint { font-size: 0.82rem; color: var(--muted); margin: 0; }
+.scroll { overflow-x: auto; }
+
+table.bd { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+table.bd th, table.bd td { padding: 6px; border-bottom: 1px solid var(--hair); text-align: right; white-space: nowrap; }
+table.bd th:first-child, table.bd td:first-child { text-align: left; white-space: normal; min-width: 130px; }
+table.bd th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+table.bd td { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+table.bd td:first-child { font-family: var(--body); }
+table.bd td .src { display: block; font-size: 0.75rem; color: var(--muted); }
+table.bd input.g { width: 64px; padding: 4px 6px; font-family: var(--mono); font-size: 0.85rem; text-align: right; }
+table.bd tr.miss td { background: var(--warnbg); }
+table.bd tfoot td { font-weight: 700; border-bottom: 0; border-top: 2px solid var(--rule); }
+
+.customform { border: 1px dashed var(--hair); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.mealgroup h3 { margin: 0; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); display: flex; justify-content: space-between; padding-bottom: 4px; border-bottom: 1px solid var(--hair); }
+.entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; padding: 10px 0; border-bottom: 1px solid var(--hair); }
+.entry .what { font-weight: 600; overflow-wrap: anywhere; }
+.entry .ing { grid-column: 1 / -1; font-size: 0.82rem; color: var(--muted); overflow-wrap: anywhere; }
+.entry .mac, .idea .mac { font-family: var(--mono); font-size: 0.82rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.entry .kc { font-family: var(--mono); font-weight: 600; text-align: right; }
+.entry .ops { display: flex; gap: 4px; justify-content: end; }
+.linkbtn { background: none; border: 0; color: var(--muted); font-size: 0.82rem; text-decoration: underline; padding: 2px 4px; }
+.linkbtn.danger { color: var(--over); }
+.empty { border: 1px dashed var(--hair); border-radius: 10px; padding: 18px; color: var(--muted); text-align: center; }
+
+.tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag { font-size: 0.82rem; border: 1px solid var(--hair); border-radius: 999px; padding: 3px 4px 3px 10px; display: inline-flex; align-items: center; gap: 2px; }
+.tag button { border: 0; background: none; color: var(--muted); padding: 0 6px; font-size: 1rem; line-height: 1; }
+.idea { border: 1px solid var(--hair); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+.idea .ih { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.idea .have { font-size: 0.82rem; font-weight: 600; }
+.idea .have.full { color: var(--accent); }
+.idea .ing { font-size: 0.85rem; color: var(--muted); }
+.progress { height: 6px; background: var(--track); border-radius: 3px; overflow: hidden; }
+.progress i { display: block; height: 100%; width: 0; background: var(--accent); }
+
+.seg { display: flex; gap: 4px; flex-wrap: wrap; }
+svg text { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
+svg .goal { stroke: var(--ink); stroke-dasharray: 4 3; stroke-width: 1; }
+svg .grid { stroke: var(--hair); stroke-width: 1; }
+.avg { font-size: 0.88rem; }
+.avg b { font-family: var(--mono); }
+details summary { cursor: pointer; font-weight: 700; }
+.goalsgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin-top: 10px; }
+footer { font-size: 0.78rem; color: var(--muted); text-align: center; }
+@media (prefers-reduced-motion: no-preference) { .bar i, .progress i { transition: width 0.35s ease; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Plate Log</h1>
+      <div class="status" id="status">Loading…</div>
+    </div>
+    <div class="datebar">
+      <button class="iconbtn" id="prevDay" aria-label="Previous day">‹</button>
+      <input type="date" id="dayPick" aria-label="Choose day">
+      <button class="iconbtn" id="nextDay" aria-label="Next day">›</button>
+      <button class="todaybtn" id="todayBtn">Today</button>
+    </div>
+  </header>
+  <div class="account" id="account"></div>
+
+  <section class="facts" aria-label="Day totals">
+    <div class="ftitle">Nutrition Facts</div>
+    <div class="sub" id="factsSub">Today</div>
+    <div class="cal">
+      <div class="lbl">Calories</div>
+      <div><div class="big" id="kcalBig">0</div><div class="of" id="kcalOf"></div></div>
+    </div>
+    <div class="dvhead">% of your daily goal</div>
+    <div id="macroRows"></div>
+    <div class="split" id="energySplit"></div>
+  </section>
+
+  <section class="card" aria-label="Log a meal">
+    <h2 id="formTitle">Log a meal</h2>
+    <div class="chips" id="typeChips"></div>
+    <label for="mealName">Meal name (optional)
+      <input type="text" id="mealName" placeholder="Mushroom spinach omelette" autocomplete="off">
+    </label>
+    <label for="mealText">Ingredients, one per line
+      <textarea id="mealText" rows="4" placeholder="2 eggs&#10;3 mushrooms&#10;a handful of spinach&#10;1 tsp olive oil"></textarea>
+    </label>
+    <p class="hint">Write amounts the way you would say them: <span class="num">2 eggs</span>, <span class="num">100g paneer</span>, <span class="num">1 cup rice</span>, <span class="num">2 rotis</span>, <span class="num">1 tbsp ghee</span>. Change any gram amount in the table to correct it.</p>
+    <div class="actions">
+      <select id="savedPick" aria-label="Fill from saved meals" hidden style="max-width: 300px"></select>
+    </div>
+    <div class="scroll" id="breakdown" hidden></div>
+    <div class="customform" id="customForm" hidden>
+      <b id="customTitle">Add a food</b>
+      <p class="hint">Copy the "per 100 g" values from the packet label.</p>
+      <label for="cName">Name<input type="text" id="cName"></label>
+      <div class="macros">
+        <label for="cKcal">kcal<input type="number" id="cKcal" inputmode="decimal" min="0"></label>
+        <label for="cP">Protein<input type="number" id="cP" inputmode="decimal" min="0" step="0.1"></label>
+        <label for="cC">Carbs<input type="number" id="cC" inputmode="decimal" min="0" step="0.1"></label>
+        <label for="cF">Fat<input type="number" id="cF" inputmode="decimal" min="0" step="0.1"></label>
+        <label for="cFb">Fibre<input type="number" id="cFb" inputmode="decimal" min="0" step="0.1"></label>
+      </div>
+      <label for="cEach">Grams in one piece or serving (optional)<input type="number" id="cEach" inputmode="decimal" min="0"></label>
+      <div class="actions">
+        <button class="btn" id="cSave">Save food</button>
+        <button class="btn ghost" id="cCancel">Cancel</button>
+        <span class="status" id="cMsg"></span>
+      </div>
+    </div>
+    <div class="macros">
+      <label for="fKcal">kcal<input type="number" id="fKcal" inputmode="decimal" min="0" step="1"></label>
+      <label for="fProtein">Protein g<input type="number" id="fProtein" inputmode="decimal" min="0" step="0.1"></label>
+      <label for="fCarbs">Carbs g<input type="number" id="fCarbs" inputmode="decimal" min="0" step="0.1"></label>
+      <label for="fFat">Fat g<input type="number" id="fFat" inputmode="decimal" min="0" step="0.1"></label>
+      <label for="fFibre">Fibre g<input type="number" id="fFibre" inputmode="decimal" min="0" step="0.1"></label>
+    </div>
+    <div class="actions">
+      <button class="btn" id="saveBtn">Add to log</button>
+      <button class="btn ghost" id="cancelEdit" hidden>Cancel edit</button>
+      <label class="check" for="saveFav"><input type="checkbox" id="saveFav"> Save as a favourite meal</label>
+    </div>
+    <div class="status" id="formMsg"></div>
+  </section>
+
+  <section class="card" aria-label="Meal ideas from groceries">
+    <h2>From my groceries</h2>
+    <p class="hint">Take a photo of your grocery bill. The site reads it on your phone or laptop (nothing is uploaded) and shows meals you can make. You can also type items or fix what it read.</p>
+    <label for="billFile">Bill photo
+      <input type="file" id="billFile" accept="image/*">
+    </label>
+    <div class="progress" id="ocrProg" hidden><i></i></div>
+    <div class="status" id="ocrMsg"></div>
+    <label for="pantryAdd">Add an item
+      <input type="text" id="pantryAdd" list="foodList" placeholder="paneer, eggs, spinach…" autocomplete="off">
+    </label>
+    <datalist id="foodList"></datalist>
+    <div class="tags" id="pantryTags"></div>
+    <div class="actions">
+      <label class="check" for="highProtein"><input type="checkbox" id="highProtein" checked> Show high-protein meals first</label>
+      <button class="linkbtn" id="clearPantry" hidden>Clear items</button>
+    </div>
+    <div id="ideasBox" style="display:flex;flex-direction:column;gap:10px"></div>
+  </section>
+
+  <section class="card" aria-label="Meals for the day">
+    <h2 id="logTitle">Meals</h2>
+    <div id="mealList"></div>
+  </section>
+
+  <section class="card" aria-label="Last seven days">
+    <div class="top" style="align-items:center">
+      <h2>Last 7 days</h2>
+      <div class="seg" id="metricChips"></div>
+    </div>
+    <div class="scroll"><svg id="weekChart" viewBox="0 0 600 220" width="100%" role="img" aria-label="Seven day chart"></svg></div>
+    <div class="avg" id="weekAvg"></div>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary>Daily goals</summary>
+      <div class="goalsgrid">
+        <label for="gKcal">kcal<input type="number" id="gKcal" min="0"></label>
+        <label for="gProtein">Protein g<input type="number" id="gProtein" min="0"></label>
+        <label for="gCarbs">Carbs g<input type="number" id="gCarbs" min="0"></label>
+        <label for="gFat">Fat g<input type="number" id="gFat" min="0"></label>
+        <label for="gFibre">Fibre g<input type="number" id="gFibre" min="0"></label>
+      </div>
+      <div class="actions" style="margin-top:10px">
+        <button class="btn" id="saveGoals">Save goals</button>
+        <span class="status" id="goalsMsg"></span>
+      </div>
+    </details>
+    <div class="actions">
+      <button class="btn ghost small" id="exportCsv">Download all meals (CSV)</button>
+    </div>
+  </section>
+
+  <footer>Nutrition values are typical averages from USDA and UK food tables. Packet labels are more exact.</footer>
+</div>
+
+<script src="config.js"></script>
+<script src="foods.js"></script>
+<script src="recipes.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
