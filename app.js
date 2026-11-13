@@ -353,6 +353,7 @@
         };
         ops.append(ed, del); row.appendChild(ops);
         if (m.ingredients && m.ingredients.replace(/\n/g, ", ") !== m.name) row.appendChild(el("div", "ing", m.ingredients.split("\n").filter(Boolean).join(" · ")));
+        else if (m.outItems) row.appendChild(el("div", "ing", "Ate out · " + m.outItems.split("\n").filter(Boolean).join(" · ")));
         card.appendChild(row);
       });
       box.appendChild(card);
@@ -495,6 +496,8 @@
   }
   function clearForm() {
     $("mealName").value = ""; $("mealText").value = ""; gramOverride = {}; macroManual = false; $("saveFav").checked = false;
+    mealExtra = {}; outImage = null; $("outPreview").hidden = true; $("outResult").innerHTML = ""; $("outMsg").textContent = "";
+    $("outPlace").value = ""; $("outNote").value = ""; $("outDropText").textContent = "Take or choose a photo of your meal"; $("outPhoto").value = "";
     editingId = null; $("formTitle").textContent = "Log a meal"; $("saveBtn").textContent = "Add to log"; $("cancelEdit").hidden = true;
     closeCustom(); refreshBreakdown(); fillMacros({});
   }
@@ -518,7 +521,7 @@
     const overrides = {}; parsed.forEach((r) => { if (r.food && gramOverride[r.raw] != null) overrides[r.raw] = gramOverride[r.raw]; });
     const items = parsed.filter((r) => r.food).map((r) => ({ food: r.food.n, grams: r.grams }));
     const old = editingId ? S.meals.find((m) => m.id === editingId) : null;
-    const meal = { id: editingId || undefined, date: old ? old.date : day, type, name, ingredients: ing, items, overrides, ...mac, createdAt: old ? old.createdAt : Date.now() };
+    const meal = { ...(old && old.source ? { source: old.source, place: old.place, sourceUrl: old.sourceUrl, outItems: old.outItems } : {}), id: editingId || undefined, date: old ? old.date : day, type, name, ingredients: ing, items, overrides, ...mac, ...mealExtra, createdAt: old ? old.createdAt : Date.now() };
     $("saveBtn").disabled = true; $("formMsg").textContent = "Saving…";
     try {
       await store.put("meals", meal);
@@ -680,7 +683,7 @@
     const acts = el("div", "actions");
     const use = el("button", "btn ghost small", "Log this meal");
     use.onclick = () => {
-      clearForm();
+      clearForm(); setMode("cooked");
       if (TYPES.includes(x.r.t)) { type = x.r.t; renderChips(); }
       $("mealName").value = x.r.n + (x.r.side ? " with " + lcName(x.r.side[0]) : "");
       $("mealText").value = x.r.i.concat(x.r.side ? [x.r.side] : []).map(([n, g]) => { const f = foodByName(n); return g + "g " + ((f && f.a && f.a[0]) || n.toLowerCase()); }).join("\n");
@@ -732,6 +735,201 @@
       box.appendChild(el("p", "hint", "Used in other dishes or as basics: " + unused.map(lcName).join(", ") + "."));
     }
   }
+
+  /* ================= ate out: photo estimate + dish list ================= */
+  const AI_KEY = "platelog-ai";
+  const SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.3.0/+esm";
+  function readAi() { try { return JSON.parse(localStorage.getItem(AI_KEY)) || {}; } catch (e) { return {}; } }
+  let ai = readAi();
+  let mode = "cooked", outImage = null, outSize = 1, mealExtra = {};
+  function setMode(m) {
+    mode = m;
+    document.querySelectorAll("#modeSeg .chip").forEach((b) => b.setAttribute("aria-pressed", b.dataset.mode === m));
+    $("outCard").hidden = m !== "out"; $("cookedCard").hidden = m !== "cooked";
+    if (m === "out") renderOutList();
+  }
+  document.querySelectorAll("#modeSeg .chip").forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
+  function renderAi() {
+    const on = !!ai.key;
+    $("aiState").textContent = on ? "On" : "Off"; $("aiState").className = "have" + (on ? " full" : "");
+    $("aiSetup").hidden = on; $("aiOff").hidden = !on;
+    $("aiSave").textContent = on ? "Save" : "Turn on photo estimates";
+    $("aiModel").value = ai.model || "claude-opus-5-5";
+    $("outNoKey").hidden = on; $("outEstimate").hidden = !on;
+  }
+  $("aiSave").onclick = () => {
+    const k = $("aiKey").value.trim();
+    if (!ai.key && !/^sk-ant-/.test(k)) { $("aiMsg").textContent = "That doesn't look like a Claude API key. It starts with sk-ant-."; return; }
+    ai = { key: k || ai.key, model: $("aiModel").value };
+    try { localStorage.setItem(AI_KEY, JSON.stringify(ai)); } catch (e) {}
+    $("aiKey").value = ""; $("aiMsg").textContent = ""; renderAi(); toast("Photo estimates on");
+  };
+  $("aiOff").onclick = () => {
+    if ($("aiOff").dataset.armed !== "1") { $("aiOff").dataset.armed = "1"; $("aiOff").textContent = "Tap again to remove"; setTimeout(() => { $("aiOff").dataset.armed = ""; $("aiOff").textContent = "Remove key from this device"; }, 3000); return; }
+    ai = {}; try { localStorage.removeItem(AI_KEY); } catch (e) {} renderAi(); toast("Key removed");
+  };
+
+  // Shrink the photo before sending: smaller upload, fewer tokens, same accuracy.
+  function loadPhoto(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file), img = new Image();
+      img.onload = () => {
+        const max = 1280, sc = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement("canvas"); c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        const dataUrl = c.toDataURL("image/jpeg", 0.85);
+        resolve({ dataUrl, b64: dataUrl.split(",")[1] });
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("That file couldn't be opened as a photo.")); };
+      img.src = url;
+    });
+  }
+  $("outPhoto").onchange = async (e) => {
+    const f = e.target.files && e.target.files[0]; if (!f) return;
+    try {
+      outImage = await loadPhoto(f);
+      $("outPreview").src = outImage.dataUrl; $("outPreview").hidden = false; $("outDropText").textContent = "Change photo";
+      $("outMsg").textContent = ""; $("outResult").innerHTML = "";
+    } catch (err) { $("outMsg").textContent = err.message; }
+  };
+
+  function extractJson(text) {
+    const s = text.indexOf("{"), e = text.lastIndexOf("}");
+    if (s < 0 || e <= s) return null;
+    try { return JSON.parse(text.slice(s, e + 1)); } catch (err) { return null; }
+  }
+  async function estimateOut() {
+    const place = $("outPlace").value.trim(), note = $("outNote").value.trim();
+    if (!outImage && !note) { $("outMsg").textContent = "Add a photo, or describe what you ate in the box above."; return; }
+    const btn = $("outEstimate"), prog = $("outProg"), bar = prog.querySelector("i");
+    btn.disabled = true; btn.textContent = place ? "Checking the menu and estimating…" : "Estimating…";
+    $("outMsg").classList.remove("warn"); $("outMsg").textContent = ""; $("outResult").innerHTML = "";
+    prog.hidden = false; bar.style.width = "15%";
+    const tick = setInterval(() => { const w = parseFloat(bar.style.width); if (w < 90) bar.style.width = w + 4 + "%"; }, 800);
+    try {
+      const { default: Anthropic } = await import(SDK_URL);
+      const client = new Anthropic({ apiKey: ai.key, dangerouslyAllowBrowser: true });
+      const prompt =
+        "Estimate the nutrition of a meal someone ate out.\n" +
+        "Where they ate: " + (place || "not given") + "\n" +
+        "Their notes: " + (note || "none") + "\n" +
+        "They live in London, UK, so assume UK restaurants and portions unless the place says otherwise.\n\n" +
+        "How to work it out:\n" +
+        "1. " + (outImage ? "Identify each item in the photo and estimate its portion from visual cues (plate size, cutlery, typical restaurant portions)." : "Work from their description.") + "\n" +
+        "2. " + (place ? "If the place publishes nutrition (most UK chains do), search for the dish's published calories and use them, adjusted for what was actually eaten. Prefer the restaurant's own site." : "No place was given, so use typical restaurant values.") + "\n" +
+        "3. Otherwise use typical restaurant values. Restaurant food usually has more oil, butter and cream than home cooking.\n" +
+        "4. Apply their notes (for example 'ate half' halves everything).\n\n" +
+        "Reply with only this JSON object and nothing else:\n" +
+        '{"dish": string, "items": [{"item": string, "portion": string, "kcal": number, "protein": number, "carbs": number, "fat": number, "fibre": number}], ' +
+        '"total": {"kcal": number, "protein": number, "carbs": number, "fat": number, "fibre": number}, ' +
+        '"source": "menu" or "estimate", "source_name": string or null, "source_url": string or null, "confidence": "high" or "medium" or "low", "note": "one short sentence on what you assumed"}\n' +
+        "Grams for macros. Single numbers, no ranges.";
+      const content = [];
+      if (outImage) content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: outImage.b64 } });
+      content.push({ type: "text", text: prompt });
+      const messages = [{ role: "user", content }];
+      const params = {
+        model: ai.model || "claude-opus-5-5",
+        max_tokens: 16000,
+        output_config: { effort: "medium" },
+        betas: ["server-side-fallback-2026-07-01"],
+        fallbacks: "default",
+        messages,
+      };
+      if (place) params.tools = [{ type: "web_search_20260209", name: "web_search", max_uses: 3, user_location: { type: "approximate", city: "London", country: "GB", timezone: "Europe/London" } }];
+      let res;
+      for (let i = 0; i < 4; i++) {
+        res = await client.beta.messages.create(params);
+        if (res.stop_reason !== "pause_turn") break;
+        messages.push({ role: "assistant", content: res.content }); // let the search loop carry on
+      }
+      if (res.stop_reason === "refusal") throw new Error("Claude declined to estimate this one. Try the dish list instead.");
+      const text = res.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
+      const out = extractJson(text);
+      if (!out || !out.total) throw new Error("The estimate came back in a form the site couldn't read. Try again.");
+      renderEstimate(out, place);
+    } catch (e) {
+      let msg = e && e.message ? e.message : "Something went wrong.";
+      const st = e && e.status;
+      if (st === 401) msg = "Your Claude API key was rejected. Check it under Progress → Photo estimates.";
+      else if (st === 429) msg = "Too many requests right now. Wait a minute and try again.";
+      else if (st === 400 && /credit|balance|billing/i.test(msg)) msg = "Your Anthropic account has no credit left. Add credit at console.anthropic.com → Billing.";
+      else if (st >= 500) msg = "Claude is busy right now. Try again in a minute.";
+      else if (/Failed to fetch|NetworkError|Load failed|import/i.test(msg)) msg = "Couldn't reach Claude. Check your internet connection.";
+      $("outMsg").classList.add("warn"); $("outMsg").textContent = msg;
+    } finally {
+      clearInterval(tick); prog.hidden = true; btn.disabled = false; btn.textContent = "Estimate calories";
+    }
+  }
+  $("outEstimate").onclick = estimateOut;
+
+  function renderEstimate(out, place) {
+    const box = $("outResult"); box.innerHTML = "";
+    const t = { kcal: Math.round(num(out.total.kcal)), protein: r1(num(out.total.protein)), carbs: r1(num(out.total.carbs)), fat: r1(num(out.total.fat)), fibre: r1(num(out.total.fibre)) };
+    const card = el("div", "idea");
+    const ih = el("div", "ih"); ih.append(el("b", null, String(out.dish || "Your meal").slice(0, 100)), el("span", "num", t.kcal + " kcal"));
+    const tags = el("div", "tags");
+    const src = out.source === "menu" ? "From " + String(out.source_name || "the restaurant's nutrition info").slice(0, 60) : "Estimated from the photo";
+    tags.append(el("span", "have" + (out.source === "menu" ? " full" : ""), src), el("span", "have", (out.confidence || "medium") + " confidence"));
+    card.append(ih, macroLine(t), tags);
+    if (Array.isArray(out.items) && out.items.length) {
+      const tbl = el("table", "bd");
+      tbl.innerHTML = "<thead><tr><th>Item</th><th>kcal</th><th>Protein</th><th>Carbs</th><th>Fat</th></tr></thead>";
+      const tb = el("tbody");
+      out.items.slice(0, 12).forEach((it) => {
+        const tr = el("tr"); const td = el("td");
+        td.append(el("span", null, String(it.item || "").slice(0, 80)), el("span", "src", String(it.portion || "").slice(0, 60)));
+        tr.append(td, el("td", null, String(Math.round(num(it.kcal)))), el("td", null, fmt(r1(num(it.protein)))), el("td", null, fmt(r1(num(it.carbs)))), el("td", null, fmt(r1(num(it.fat)))));
+        tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+      const wrap = el("div", "scroll"); wrap.appendChild(tbl); card.appendChild(wrap);
+    }
+    if (out.note) card.appendChild(el("p", "hint", String(out.note).slice(0, 300)));
+    if (out.source_url && /^https?:\/\//.test(out.source_url)) {
+      const a = el("a", "hint", "Source: " + String(out.source_url).replace(/^https?:\/\//, "").slice(0, 60)); a.href = out.source_url; a.target = "_blank"; a.rel = "noopener";
+      card.appendChild(a);
+    }
+    const acts = el("div", "actions");
+    const use = el("button", "btn", "Use this estimate");
+    use.onclick = () => useOut({ name: String(out.dish || "Meal out").slice(0, 100), ...t, place, sourceUrl: out.source_url || null,
+      items: (out.items || []).slice(0, 12).map((it) => String(it.item || "") + (it.portion ? " (" + it.portion + ")" : "")).join("\n") });
+    acts.appendChild(use); card.appendChild(acts);
+    box.appendChild(card);
+  }
+  function useOut(o) {
+    $("mealName").value = o.name + (o.place ? " · " + o.place : "");
+    $("mealText").value = ""; gramOverride = {}; refreshBreakdown();
+    macroManual = true; fillMacros(o);
+    document.querySelector("#saveBtn").closest(".card").querySelector("details").open = true;
+    mealExtra = { source: "out", place: o.place || null, sourceUrl: o.sourceUrl || null, outItems: o.items || "" };
+    $("formMsg").textContent = "Check the numbers, then tap Add to log.";
+    $("saveBtn").scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  document.querySelectorAll("#outSize .chip").forEach((b) => (b.onclick = () => {
+    outSize = parseFloat(b.dataset.size);
+    document.querySelectorAll("#outSize .chip").forEach((x) => x.setAttribute("aria-pressed", x === b));
+    renderOutList();
+  }));
+  $("outSearch").addEventListener("input", () => renderOutList());
+  function renderOutList() {
+    const q = $("outSearch").value.trim().toLowerCase();
+    const box = $("outList"); box.innerHTML = "";
+    const words = q.split(/\s+/).filter(Boolean);
+    const rows = window.EATOUT.filter(([n, g]) => words.every((w) => (n + " " + g).toLowerCase().includes(w))).slice(0, 40);
+    if (!rows.length) { box.appendChild(el("div", "mempty", "No dish matches. Try a simpler word, or use a photo.")); return; }
+    rows.forEach(([n, g, k, p, c, f, fb]) => {
+      const m = outSize, v = { kcal: Math.round(k * m), protein: r1(p * m), carbs: r1(c * m), fat: r1(f * m), fibre: r1(fb * m) };
+      const b = el("button", "outrow");
+      const left = el("div"); left.append(el("b", null, n), el("small", null, " · " + g));
+      b.append(left, el("span", "num", v.kcal + " kcal · " + fmt(v.protein) + "g P"));
+      b.onclick = () => useOut({ name: n + (m !== 1 ? (m < 1 ? " (small)" : " (large)") : ""), ...v, place: $("outPlace").value.trim() });
+      box.appendChild(b);
+    });
+  }
+  renderAi();
 
   /* ================= goals, export ================= */
   function renderGoals() { const g = S.goals; $("gKcal").value = g.kcal; $("gProtein").value = g.protein; $("gCarbs").value = g.carbs; $("gFat").value = g.fat; $("gFibre").value = g.fibre; }

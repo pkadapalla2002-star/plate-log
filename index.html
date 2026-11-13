@@ -11,7 +11,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Plate Log">
-<link rel="manifest" href="manifest.webmanifest?v=6">
+<link rel="manifest" href="manifest.webmanifest?v=7">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -203,6 +203,10 @@ svg .grid { stroke: var(--hair); stroke-width: 1; }
 .tab[aria-current="page"] { color: var(--accent); }
 .tab.plus .pill { width: 44px; height: 30px; border-radius: 15px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; }
 .tab.plus .pill svg { width: 20px; height: 20px; }
+.outrow { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 2px 10px; align-items: center; text-align: left; border: 1px solid var(--hair); background: var(--panel); border-radius: 12px; padding: 10px 12px; }
+.outrow b { font-weight: 600; }
+.outrow .num { font-size: 0.82rem; color: var(--muted); }
+.outrow small { color: var(--muted); font-size: 0.75rem; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--navh) + 16px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-weight: 600; font-size: 0.9rem; z-index: 40; box-shadow: var(--shadow); max-width: calc(100% - 32px); }
 footer { font-size: 0.75rem; color: var(--muted); text-align: center; padding: 4px 0; }
 @media (prefers-reduced-motion: no-preference) {
@@ -251,8 +255,46 @@ footer { font-size: 0.75rem; color: var(--muted); text-align: center; padding: 4
         <div class="eyebrow" id="addFor">Today</div>
         <h2 id="formTitle">Log a meal</h2>
       </div>
-      <div class="card">
-        <div class="chips" id="typeChips"></div>
+      <div class="seg" id="modeSeg" role="tablist" aria-label="How was this meal made">
+        <button class="chip" data-mode="cooked" aria-pressed="true">I cooked it</button>
+        <button class="chip" data-mode="out" aria-pressed="false">I ate out</button>
+      </div>
+      <div class="chips" id="typeChips"></div>
+
+      <div class="card" id="outCard" hidden>
+        <label class="drop" for="outPhoto" id="outDrop">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3l2-3h6l2 3h3a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="4"/></svg>
+          <span id="outDropText">Take or choose a photo of your meal</span>
+          <small>Not saved anywhere, only sent for the estimate</small>
+          <input type="file" id="outPhoto" accept="image/*">
+        </label>
+        <img id="outPreview" alt="Your meal" hidden style="width:100%;max-height:260px;object-fit:cover;border-radius:14px">
+        <label for="outPlace">Where did you eat? (optional)
+          <input type="text" id="outPlace" placeholder="Dishoom Covent Garden, Nando's, office canteen…" autocomplete="off">
+        </label>
+        <label for="outNote">Anything that helps? (optional)
+          <input type="text" id="outNote" placeholder="ate half, shared the naan, large portion…" autocomplete="off">
+        </label>
+        <button class="btn block" id="outEstimate">Estimate calories</button>
+        <p class="hint" id="outNoKey" hidden>To estimate from a photo, add your Claude API key under <b>Progress → Photo estimates</b>. Or pick a dish from the list below.</p>
+        <div class="progress" id="outProg" hidden><i></i></div>
+        <div class="status" id="outMsg"></div>
+        <div id="outResult"></div>
+        <details id="outListBox">
+          <summary class="hint" style="cursor:pointer;font-weight:700">Or pick from common dishes (free)</summary>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+            <input type="text" id="outSearch" placeholder="Search: biryani, latte, pizza…" autocomplete="off" aria-label="Search dishes">
+            <div class="seg" id="outSize">
+              <button class="chip" data-size="0.75" aria-pressed="false">Small</button>
+              <button class="chip" data-size="1" aria-pressed="true">Regular</button>
+              <button class="chip" data-size="1.35" aria-pressed="false">Large</button>
+            </div>
+            <div id="outList" style="display:flex;flex-direction:column;gap:6px;max-height:360px;overflow-y:auto"></div>
+          </div>
+        </details>
+      </div>
+
+      <div class="card" id="cookedCard">
         <label for="mealText">What did you eat? One ingredient per line
           <textarea id="mealText" rows="4" placeholder="2 eggs&#10;3 mushrooms&#10;a handful of spinach&#10;1 tsp olive oil"></textarea>
         </label>
@@ -353,6 +395,27 @@ footer { font-size: 0.75rem; color: var(--muted); text-align: center; padding: 4
           <span class="status" id="goalsMsg"></span>
         </div>
       </div>
+      <div class="card" id="aiCard">
+        <div class="actions" style="justify-content:space-between"><h2>Photo estimates</h2><span class="have" id="aiState">Off</span></div>
+        <p class="hint">For meals you ate out. A photo (plus where you ate) is sent to Claude, which estimates the calories and checks the restaurant's published nutrition online when it can. You pay Anthropic directly: about 3p per photo, or about 10p when it looks up a restaurant. Only you see the result.</p>
+        <div id="aiSetup" style="display:flex;flex-direction:column;gap:12px">
+          <label for="aiKey">Claude API key
+            <input type="text" id="aiKey" placeholder="sk-ant-…" autocomplete="off" autocapitalize="off" spellcheck="false">
+          </label>
+          <p class="hint">Get one at <b>console.anthropic.com</b> → API Keys. The key is stored only in this browser. It is never synced.</p>
+        </div>
+        <label for="aiModel">Accuracy
+          <select id="aiModel">
+            <option value="claude-opus-5-5">Best (Claude Opus 5.5)</option>
+            <option value="claude-sonnet-5-5">Cheaper, about half the cost (Claude Sonnet 5.5)</option>
+          </select>
+        </label>
+        <div class="actions">
+          <button class="btn" id="aiSave">Turn on photo estimates</button>
+          <button class="linkbtn danger" id="aiOff" hidden>Remove key from this device</button>
+        </div>
+        <div class="status" id="aiMsg"></div>
+      </div>
       <div class="card" id="syncCard">
         <div class="actions" style="justify-content:space-between"><h2>Sync between devices</h2><span class="have" id="syncState">Off</span></div>
         <div id="syncSetup" style="display:flex;flex-direction:column;gap:12px">
@@ -397,9 +460,10 @@ footer { font-size: 0.75rem; color: var(--muted); text-align: center; padding: 4
     if (s) { s.className = "status warn"; s.textContent = "Something went wrong: " + (e.message || "script error") + ". Pull down to refresh, or close and reopen the app."; }
   });
 </script>
-<script src="config.js?v=6"></script>
-<script src="foods.js?v=6"></script>
-<script src="recipes.js?v=6"></script>
-<script src="app.js?v=6"></script>
+<script src="config.js?v=7"></script>
+<script src="foods.js?v=7"></script>
+<script src="recipes.js?v=7"></script>
+<script src="eatout.js?v=7"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>
