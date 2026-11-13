@@ -8,9 +8,10 @@
 <meta name="theme-color" content="#f3f5f2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#101412" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Plate Log">
-<link rel="manifest" href="manifest.webmanifest">
+<link rel="manifest" href="manifest.webmanifest?v=3">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -372,9 +373,15 @@ footer { font-size: 0.75rem; color: var(--muted); text-align: center; padding: 4
 </nav>
 <div class="toast" id="toast" hidden></div>
 
-<script src="config.js"></script>
-<script src="foods.js"></script>
-<script src="recipes.js"></script>
-<script src="app.js"></script>
+<script>
+  window.addEventListener("error", function (e) {
+    var s = document.getElementById("status");
+    if (s) { s.className = "status warn"; s.textContent = "Something went wrong: " + (e.message || "script error") + ". Pull down to refresh, or close and reopen the app."; }
+  });
+</script>
+<script src="config.js?v=3"></script>
+<script src="foods.js?v=3"></script>
+<script src="recipes.js?v=3"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>
