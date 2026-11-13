@@ -623,6 +623,67 @@
     const rows = r.i.map(([n, g]) => { const f = foodByName(n); return f ? macrosFor(f, g) : null; }).filter(Boolean);
     return totals(rows);
   }
+  // Portions per serving for building plates from whatever is in the groceries.
+  const PLATE = {
+    protein: { "Egg": 150, "Egg white": 132, "Paneer": 100, "Tofu, firm": 150, "Chicken breast, raw": 150, "Chicken breast, cooked": 120, "Chicken thigh, raw": 150,
+      "Salmon": 120, "Tuna, tinned in water": 112, "Prawns": 120, "White fish (cod, basa)": 150, "Soya chunks, dry": 50, "Chickpeas, cooked": 150,
+      "Kidney beans, cooked": 150, "Black beans, cooked": 150, "Lentils / dal, dry": 60, "Lentils / dal, cooked": 200, "Mutton (goat)": 150, "Beef mince (10% fat)": 125,
+      "Lamb": 125, "Greek yoghurt": 200, "Greek yoghurt, fat free": 200, "Cottage cheese": 200 },
+    carb: { "Rice, cooked": 180, "Rice, raw": 60, "Brown rice, cooked": 180, "Roti / chapati": 80, "Bread, wholemeal": 72, "Bread, white": 72, "Wrap / tortilla": 62,
+      "Pasta, dry": 80, "Pasta, cooked": 200, "Quinoa, cooked": 180, "Potato": 200, "Sweet potato": 200, "Noodles, cooked": 200, "Oats": 50, "Naan": 90, "Paratha": 80 },
+    veg: { "Spinach": 60, "Mushroom": 80, "Onion": 50, "Tomato": 80, "Bell pepper / capsicum": 80, "Broccoli": 80, "Carrot": 60, "Peas": 60, "Green beans": 80,
+      "Cauliflower": 100, "Courgette": 100, "Aubergine (brinjal)": 100, "Okra (bhindi)": 100, "Cabbage": 80, "Sweetcorn": 60, "Cucumber": 80, "Lettuce / salad leaves": 40 },
+    fruit: { "Banana": 118, "Apple": 180, "Strawberries": 100, "Blueberries": 80, "Mango": 150, "Grapes": 100, "Orange": 130 },
+  };
+  const SWEET_PROTEIN = new Set(["Greek yoghurt", "Greek yoghurt, fat free", "Cottage cheese"]);
+  function buildPlates(pantry) {
+    const pick = (cat) => pantry.filter((n) => PLATE[cat][n]);
+    const prot = pick("protein").sort((a, b) => (foodByName(b).p * PLATE.protein[b]) - (foodByName(a).p * PLATE.protein[a]));
+    const carbs = pick("carb"), veg = pick("veg"), fruit = pick("fruit");
+    const plates = [];
+    prot.forEach((p, i) => {
+      const lc = (n) => n.split(/[,/(]/)[0].trim().toLowerCase();
+      if (SWEET_PROTEIN.has(p)) {
+        const f = fruit[i % Math.max(fruit.length, 1)];
+        const parts = [[p, PLATE.protein[p]]]; if (f) parts.push([f, PLATE.fruit[f]]);
+        const oat = carbs.includes("Oats") ? [["Oats", 30]] : [];
+        plates.push({ n: lc(p).replace(/^./, (c) => c.toUpperCase()) + (f ? " with " + lc(f) : "") + (oat.length ? " and oats" : "") + " bowl", t: "Breakfast",
+          m: "Spoon into a bowl and top with the rest.", i: parts.concat(oat), plate: true });
+        return;
+      }
+      const c = carbs.filter((x) => x !== "Oats")[i % Math.max(carbs.filter((x) => x !== "Oats").length, 1)];
+      const vs = veg.length ? [veg[i % veg.length], veg[(i + 1) % veg.length]].filter((v, k, a) => a.indexOf(v) === k) : [];
+      const ing = [[p, PLATE.protein[p]]].concat(vs.map((v) => [v, PLATE.veg[v]]));
+      if (c) ing.push([c, PLATE.carb[c]]);
+      ing.push(["Cooking oil", 8]);
+      const name = lc(p).replace(/^./, (x) => x.toUpperCase()) + (vs.length ? ", " + vs.map(lc).join(" and ") : "") + (c ? " with " + lc(c) : "");
+      const cook = /egg/i.test(p) ? "Scramble or make an omelette with the vegetables" : /dal|lentil|bean|chickpea|soya/i.test(p) ? "Cook into a simple curry with the vegetables and spices" : "Pan fry with the vegetables and your usual spices";
+      plates.push({ n: name, t: /egg/i.test(p) ? "Breakfast" : "Dinner", m: cook + (c ? ", serve with " + lc(c) + "." : "."), i: ing, plate: true });
+    });
+    return plates.slice(0, 4);
+  }
+  function ideaCard(x) {
+    const d = el("div", "idea");
+    const ih = el("div", "ih"); ih.append(el("b", null, x.r.n), el("span", "num", x.mac.kcal + " kcal / serving"));
+    const badge = x.missing.length ? "Need to buy: " + x.missing.map((n) => n.toLowerCase()).join(", ") : x.r.plate ? "Made from your items" : "You have everything";
+    const hv = el("div", "have" + (x.missing.length ? "" : " full"), badge);
+    const ing = el("div", "ing", x.r.i.map(([n, g]) => n + " " + g + "g").join(" · "));
+    const how = el("p", "hint", x.r.m);
+    const acts = el("div", "actions");
+    const use = el("button", "btn ghost small", "Log this meal");
+    use.onclick = () => {
+      clearForm();
+      if (TYPES.includes(x.r.t)) { type = x.r.t; renderChips(); }
+      $("mealName").value = x.r.n;
+      $("mealText").value = x.r.i.map(([n, g]) => { const f = foodByName(n); return g + "g " + ((f && f.a && f.a[0]) || n.toLowerCase()); }).join("\n");
+      refreshBreakdown();
+      $("formMsg").textContent = "Filled with one serving. Change the grams to what you actually used.";
+      show("add");
+    };
+    acts.appendChild(use);
+    d.append(ih, macroLine(x.mac), hv, ing, how, acts);
+    return d;
+  }
   function renderIdeas() {
     const box = $("ideasBox"); box.innerHTML = "";
     if (!S.pantry.length) { box.appendChild(el("div", "empty", "Add a bill photo or a few items and meal ideas appear here.")); return; }
@@ -630,38 +691,32 @@
     const have = new Set(S.pantry.map(base)), staples = new Set(window.STAPLES);
     const scored = window.RECIPES.map((r) => {
       const need = r.i.map((x) => x[0]).filter((n) => !staples.has(n));
-      const got = need.filter((n) => have.has(base(n)));
-      return { r, need, got, missing: need.filter((n) => !have.has(base(n))), score: need.length ? got.length / need.length : 0, mac: recipeMacros(r) };
-    }).filter((x) => x.got.length > 0);
+      const missing = need.filter((n) => !have.has(base(n)));
+      return { r, need, missing, mac: recipeMacros(r) };
+    });
     const hp = $("highProtein").checked;
-    scored.sort((a, b) => {
-      const ma = a.missing.length, mb = b.missing.length;
-      if (Math.min(ma, 2) !== Math.min(mb, 2)) return ma - mb;  // 0, 1, then 2+ missing
-      if (hp) return b.mac.protein - a.mac.protein;
-      return b.score - a.score;
-    });
-    if (!scored.length) { box.appendChild(el("div", "empty", "No recipe matches these items yet. Add a few more (for example eggs, onion, rice, paneer, chicken).")); return; }
-    scored.slice(0, 8).forEach((x) => {
-      const d = el("div", "idea");
-      const ih = el("div", "ih"); ih.append(el("b", null, x.r.n), el("span", "num", x.mac.kcal + " kcal / serving"));
-      const hv = el("div", "have" + (x.missing.length ? "" : " full"), x.missing.length ? "You have " + x.got.length + " of " + x.need.length + " · need " + x.missing.map((n) => n.toLowerCase()).join(", ") : "You have everything");
-      const ing = el("div", "ing", x.r.i.map(([n, g]) => n + " " + g + "g").join(" · "));
-      const how = el("p", "hint", x.r.m);
-      const acts = el("div", "actions");
-      const use = el("button", "btn ghost small", "Log this meal");
-      use.onclick = () => {
-        clearForm();
-        const tm = { Breakfast: "Breakfast", Lunch: "Lunch", Dinner: "Dinner", Snack: "Snack" }[x.r.t]; if (tm) { type = tm; renderChips(); }
-        $("mealName").value = x.r.n;
-        $("mealText").value = x.r.i.map(([n, g]) => { const f = foodByName(n); return g + "g " + ((f && f.a && f.a[0]) || n.toLowerCase()); }).join("\n");
-        refreshBreakdown();
-        $("formMsg").textContent = "Filled with one serving. Change the grams to what you actually used.";
-        show("add");
-      };
-      acts.appendChild(use);
-      d.append(ih, macroLine(x.mac), hv, ing, how, acts);
-      box.appendChild(d);
-    });
+    const byProtein = (a, b) => (hp ? b.mac.protein - a.mac.protein : 0);
+    const ready = scored.filter((x) => x.missing.length === 0).sort(byProtein);
+    const plates = buildPlates(S.pantry).map((r) => ({ r, need: [], missing: [], mac: recipeMacros(r) }))
+      .filter((p) => !ready.some((x) => x.r.n.toLowerCase() === p.r.n.toLowerCase())).sort(byProtein);
+    const now = ready.concat(plates);
+    const oneAway = scored.filter((x) => x.missing.length === 1 && x.need.length > 1).sort(byProtein).slice(0, 8);
+
+    const h = el("div", "eyebrow", "You can make these now · " + now.length);
+    box.appendChild(h);
+    if (now.length) now.forEach((x) => box.appendChild(ideaCard(x)));
+    else box.appendChild(el("div", "empty", "Nothing can be made from only these items yet. Add a protein (eggs, paneer, chicken, dal) and a carb or vegetable."));
+
+    if (oneAway.length) {
+      const det = el("details", "card");
+      const sum = el("summary", null, "Need just one more item · " + oneAway.length + " ideas");
+      sum.style.fontWeight = "700"; sum.style.cursor = "pointer";
+      det.appendChild(sum);
+      const inner = el("div"); inner.style.cssText = "display:flex;flex-direction:column;gap:12px;margin-top:12px";
+      oneAway.forEach((x) => inner.appendChild(ideaCard(x)));
+      det.appendChild(inner);
+      box.appendChild(det);
+    }
   }
 
   /* ================= goals, export ================= */
