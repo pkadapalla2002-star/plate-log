@@ -11,7 +11,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Plate Log">
-<link rel="manifest" href="manifest.webmanifest?v=3">
+<link rel="manifest" href="manifest.webmanifest?v=4">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -353,6 +353,24 @@ footer { font-size: 0.75rem; color: var(--muted); text-align: center; padding: 4
           <span class="status" id="goalsMsg"></span>
         </div>
       </div>
+      <div class="card" id="syncCard">
+        <div class="actions" style="justify-content:space-between"><h2>Sync between devices</h2><span class="have" id="syncState">Off</span></div>
+        <div id="syncSetup" style="display:flex;flex-direction:column;gap:12px">
+          <p class="hint">Your meals are saved in your own private GitHub repository, so your phone and laptop show the same log. Do this once on each device.</p>
+          <label for="syncToken">Access key
+            <input type="text" id="syncToken" placeholder="github_pat_…" autocomplete="off" autocapitalize="off" spellcheck="false">
+          </label>
+          <label for="syncRepo">Repository
+            <input type="text" id="syncRepo" autocomplete="off" autocapitalize="off" spellcheck="false">
+          </label>
+          <div class="actions"><button class="btn" id="syncConnect">Turn on sync</button></div>
+          <div class="status" id="syncMsg"></div>
+        </div>
+        <div id="syncOn" class="actions" hidden>
+          <button class="btn ghost small" id="syncNow">Sync now</button>
+          <button class="linkbtn danger" id="syncOff">Turn off on this device</button>
+        </div>
+      </div>
       <div class="card">
         <h2>Your data</h2>
         <p class="hint">Download every meal you have logged as a spreadsheet.</p>
@@ -379,9 +397,9 @@ footer { font-size: 0.75rem; color: var(--muted); text-align: center; padding: 4
     if (s) { s.className = "status warn"; s.textContent = "Something went wrong: " + (e.message || "script error") + ". Pull down to refresh, or close and reopen the app."; }
   });
 </script>
-<script src="config.js?v=3"></script>
-<script src="foods.js?v=3"></script>
-<script src="recipes.js?v=3"></script>
-<script src="app.js?v=3"></script>
+<script src="config.js?v=4"></script>
+<script src="foods.js?v=4"></script>
+<script src="recipes.js?v=4"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

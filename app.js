@@ -133,46 +133,59 @@
   }
 
   /* ================= storage ================= */
-  // Same API for local storage and Firebase. Data kept in memory in `S`.
-  const LS_KEY = "platelog-v1";
-  const S = { meals: [], foods: [], favs: [], goals: { ...DEFAULT_GOALS }, pantry: [] };
-  let mode = "local"; // or "cloud"
-  let fb = null;      // { db, auth, user, unsubs: [] }
+  // Everything lives in this browser first (works offline), then syncs to a
+  // private GitHub repository as one JSON file when the device is connected.
+  const LS_KEY = "platelog-v1", SYNC_KEY = "platelog-sync";
+  const S = { meals: [], foods: [], favs: [], goals: { ...DEFAULT_GOALS }, pantry: [], tomb: {}, goalsU: 0, pantryU: 0 };
+  const COLLS = ["meals", "foods", "favs"];
   function readLocal() { try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch (e) { return {}; } }
+  function snapshot() { return { meals: S.meals, foods: S.foods, favs: S.favs, goals: S.goals, pantry: S.pantry, tomb: S.tomb, goalsU: S.goalsU, pantryU: S.pantryU }; }
   function writeLocal() {
-    try { localStorage.setItem(LS_KEY, JSON.stringify({ meals: S.meals, foods: S.foods, favs: S.favs, goals: S.goals, pantry: S.pantry })); }
+    try { localStorage.setItem(LS_KEY, JSON.stringify(snapshot())); }
     catch (e) { status("Couldn't save on this device (storage full or blocked).", true); }
   }
-  function loadLocalIntoState() {
-    const L = readLocal();
+  function applyData(L) {
     S.meals = L.meals || []; S.foods = L.foods || []; S.favs = L.favs || [];
     S.goals = { ...DEFAULT_GOALS, ...(L.goals || {}) }; S.pantry = L.pantry || [];
-    onData();
+    S.tomb = L.tomb || {}; S.goalsU = L.goalsU || 0; S.pantryU = L.pantryU || 0;
   }
-  const userCol = (name) => fb.db.collection("users").doc(fb.user.uid).collection(name);
-  const userDoc = (name) => fb.db.collection("users").doc(fb.user.uid).collection("settings").doc(name);
+  function loadLocalIntoState() { applyData(readLocal()); onData(); }
+  const stamp = (it) => it.u || it.createdAt || 0;
+  // Merge two copies: newest edit of each item wins, deletions are remembered.
+  function merge(a, b) {
+    const out = { tomb: { ...(a.tomb || {}) } };
+    for (const [id, t] of Object.entries(b.tomb || {})) out.tomb[id] = Math.max(out.tomb[id] || 0, t);
+    COLLS.forEach((c) => {
+      const m = new Map();
+      [].concat(a[c] || [], b[c] || []).forEach((it) => { const ex = m.get(it.id); if (!ex || stamp(it) > stamp(ex)) m.set(it.id, it); });
+      out[c] = Array.from(m.values()).filter((it) => !(out.tomb[it.id] >= stamp(it)));
+    });
+    const ga = a.goalsU || 0, gb = b.goalsU || 0;
+    out.goals = gb > ga ? b.goals : a.goals; out.goalsU = Math.max(ga, gb);
+    const pa = a.pantryU || 0, pb = b.pantryU || 0;
+    out.pantry = pb > pa ? b.pantry : a.pantry; out.pantryU = Math.max(pa, pb);
+    const cutoff = Date.now() - 90 * 864e5; // forget deletions older than 90 days
+    for (const id in out.tomb) if (out.tomb[id] < cutoff) delete out.tomb[id];
+    return out;
+  }
+  function canon(o) {
+    const m = merge(o, {}), out = { goals: m.goals, goalsU: m.goalsU, pantry: m.pantry, pantryU: m.pantryU, tomb: Object.keys(m.tomb).sort().map((k) => [k, m.tomb[k]]) };
+    COLLS.forEach((c) => (out[c] = m[c].slice().sort((x, y) => (x.id < y.id ? -1 : 1))));
+    return JSON.stringify(out);
+  }
+  function changed() { writeLocal(); onData(); sync.schedule(); }
 
   const store = {
-    async put(coll, item) { // coll: meals | foods | favs
+    async put(coll, item) {
       if (!item.id) item.id = uid();
-      if (mode === "cloud") { const { id, ...data } = item; await userCol(coll).doc(id).set(data); return; }
+      item.u = Date.now();
       const arr = S[coll]; const i = arr.findIndex((x) => x.id === item.id);
       if (i >= 0) arr[i] = item; else arr.push(item);
-      writeLocal(); onData();
+      changed();
     },
-    async del(coll, id) {
-      if (mode === "cloud") { await userCol(coll).doc(id).delete(); return; }
-      S[coll] = S[coll].filter((x) => x.id !== id); writeLocal(); onData();
-    },
-    async setGoals(g) {
-      if (mode === "cloud") { await userDoc("goals").set(g); return; }
-      S.goals = g; writeLocal(); onData();
-    },
-    async setPantry(items) {
-      S.pantry = items;
-      if (mode === "cloud") { await userDoc("pantry").set({ items }); return; }
-      writeLocal(); onData();
-    },
+    async del(coll, id) { S[coll] = S[coll].filter((x) => x.id !== id); S.tomb[id] = Date.now(); changed(); },
+    async setGoals(g) { S.goals = g; S.goalsU = Date.now(); changed(); },
+    async setPantry(items) { S.pantry = items; S.pantryU = Date.now(); changed(); },
   };
 
   function onData() {
@@ -181,79 +194,92 @@
     renderGoals(); renderAll(); renderFavs(); renderPantry(); refreshBreakdown();
   }
 
-  /* ---------- Firebase (optional, for sync between devices) ---------- */
-  function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); }); }
-  async function initFirebase() {
-    const cfg = window.PLATE_FIREBASE;
-    if (!cfg || !cfg.apiKey) { renderAccount(); status("Saved on this device"); return; }
-    try {
-      const v = "10.12.2", base = "https://www.gstatic.com/firebasejs/" + v + "/";
-      await loadScript(base + "firebase-app-compat.js");
-      await Promise.all([loadScript(base + "firebase-auth-compat.js"), loadScript(base + "firebase-firestore-compat.js")]);
-      firebase.initializeApp(cfg);
-      fb = { db: firebase.firestore(), auth: firebase.auth(), user: null, unsubs: [] };
-      try { await fb.db.enablePersistence({ synchronizeTabs: true }); } catch (e) { /* offline cache optional */ }
-      fb.auth.getRedirectResult().catch(() => {});
-      fb.auth.onAuthStateChanged((user) => {
-        fb.unsubs.forEach((u) => u()); fb.unsubs = [];
-        fb.user = user;
-        if (user) startCloud(); else { mode = "local"; loadLocalIntoState(); status("Saved on this device. Sign in to sync with your other devices."); }
-        renderAccount();
-      });
-    } catch (e) {
-      status("Couldn't load sync. Saving on this device for now.", true); renderAccount();
-    }
-  }
-  function startCloud() {
-    mode = "cloud";
-    status("Syncing…");
-    const got = { meals: false, foods: false, favs: false };
-    const listen = (name) => fb.unsubs.push(userCol(name).onSnapshot((snap) => {
-      S[name] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      got[name] = true;
-      if (!snap.metadata.fromCache) status("Synced to your account · " + S.meals.length + " meals logged");
-      onData();
-    }, (e) => status("Sync stopped: " + e.message, true)));
-    listen("meals"); listen("foods"); listen("favs");
-    fb.unsubs.push(userDoc("goals").onSnapshot((d) => { S.goals = { ...DEFAULT_GOALS, ...(d.exists ? d.data() : {}) }; onData(); }, () => {}));
-    fb.unsubs.push(userDoc("pantry").onSnapshot((d) => { S.pantry = d.exists ? d.data().items || [] : []; onData(); }, () => {}));
-  }
-  function renderAccount() {
-    const a = $("account"); a.innerHTML = "";
-    if (!fb) return;
-    if (fb.user) {
-      a.appendChild(el("span", "muted", "Signed in as " + (fb.user.email || "you")));
-      const out = el("button", "linkbtn", "Sign out"); out.onclick = () => fb.auth.signOut(); a.appendChild(out);
-      const L = readLocal();
-      const n = (L.meals || []).length + (L.foods || []).length + (L.favs || []).length;
-      if (n) {
-        const mv = el("button", "btn ghost small", "Move " + (L.meals || []).length + " meals saved on this device into my account");
-        mv.onclick = async () => {
-          mv.disabled = true; mv.textContent = "Moving…";
-          try {
-            const batch = fb.db.batch();
-            ["meals", "foods", "favs"].forEach((c) => (L[c] || []).forEach((it) => { const { id, ...d } = it; batch.set(userCol(c).doc(id || uid()), d); }));
-            if (L.goals) batch.set(userDoc("goals"), L.goals);
-            await batch.commit();
-            try { localStorage.removeItem(LS_KEY); } catch (e) {}
-            renderAccount();
-          } catch (e) { mv.disabled = false; mv.textContent = "Move failed, try again"; }
-        };
-        a.appendChild(mv);
-      }
-    } else {
-      const b = el("button", "btn small", "Sign in with Google to sync");
-      b.onclick = async () => {
-        const p = new firebase.auth.GoogleAuthProvider();
-        try { await fb.auth.signInWithPopup(p); }
-        catch (e) {
-          if (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment") fb.auth.signInWithRedirect(p);
-          else if (e.code !== "auth/popup-closed-by-user" && e.code !== "auth/cancelled-popup-request") status("Sign in failed: " + e.message, true);
+  /* ---------- GitHub sync ---------- */
+  const DEFAULT_REPO = window.PLATE_SYNC_REPO || "";
+  function readSync() { try { return JSON.parse(localStorage.getItem(SYNC_KEY)) || {}; } catch (e) { return {}; } }
+  function writeSync(o) { try { localStorage.setItem(SYNC_KEY, JSON.stringify(o)); } catch (e) {} }
+  const b64enc = (str) => { const bytes = new TextEncoder().encode(str); let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(bin); };
+  const b64dec = (b64) => { const bin = atob(b64.replace(/\s/g, "")); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i); return new TextDecoder().decode(bytes); };
+  function ago(t) { const s = Math.round((Date.now() - t) / 1000); if (s < 45) return "just now"; const m = Math.round(s / 60); if (m < 60) return m + " min ago"; const h = Math.round(m / 60); return h < 24 ? h + " h ago" : new Date(t).toLocaleDateString(); }
+
+  const sync = {
+    cfg: readSync(), busy: false, again: false, timer: null, last: 0, sha: null,
+    on() { return !!(this.cfg.token && this.cfg.repo); },
+    url() { return "https://api.github.com/repos/" + this.cfg.repo + "/contents/data.json"; },
+    headers() { return { Authorization: "Bearer " + this.cfg.token, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" }; },
+    schedule() { if (!this.on()) return; clearTimeout(this.timer); this.timer = setTimeout(() => this.run(), 1200); },
+    async pull() {
+      const r = await fetch(this.url() + "?t=" + Date.now(), { headers: this.headers(), cache: "no-store" });
+      if (r.status === 404) return { data: null, sha: null };
+      if (r.status === 401) throw new Error("the access key was rejected (it may have expired)");
+      if (r.status === 403) throw new Error("the access key can't open " + this.cfg.repo + " (check it has Contents: Read and write)");
+      if (!r.ok) throw new Error("GitHub said " + r.status);
+      const j = await r.json();
+      return { data: JSON.parse(b64dec(j.content || "") || "{}"), sha: j.sha };
+    },
+    async run() {
+      if (!this.on()) return;
+      if (this.busy) { this.again = true; return; }
+      this.busy = true; renderSync("Syncing…");
+      try {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const { data, sha } = await this.pull();
+          const before = JSON.stringify(snapshot());
+          const merged = data ? merge(snapshot(), data) : snapshot();
+          applyData(merged);
+          const now = JSON.stringify(snapshot());
+          if (now !== before) { writeLocal(); onData(); }
+          if (data && canon(data) === canon(merged)) { this.sha = sha; break; } // server already up to date
+          const body = { message: "Update meals " + new Date().toISOString(), content: b64enc(JSON.stringify({ ...snapshot(), savedAt: Date.now() }, null, 1)) };
+          if (sha) body.sha = sha;
+          const r = await fetch(this.url(), { method: "PUT", headers: { ...this.headers(), "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          if (r.ok) { this.sha = (await r.json()).content.sha; break; }
+          if (r.status === 409 || r.status === 422) continue; // someone else saved first; merge again
+          if (r.status === 403 || r.status === 404) throw new Error("the access key can't write to " + this.cfg.repo + " (it needs Contents: Read and write)");
+          throw new Error("GitHub said " + r.status);
         }
-      };
-      a.appendChild(b);
-    }
+        this.last = Date.now(); this.cfg.last = this.last; writeSync(this.cfg);
+        renderSync();
+      } catch (e) {
+        renderSync(navigator.onLine === false ? "Offline. Saved on this device, will sync when you're back online." : "Sync failed: " + e.message, true);
+      } finally {
+        this.busy = false;
+        if (this.again) { this.again = false; this.schedule(); }
+      }
+    },
+  };
+  function renderSync(msg, warn) {
+    const on = sync.on();
+    const line = msg || (on ? "Synced " + ago(sync.last || sync.cfg.last || Date.now()) + " · " + S.meals.length + " meals" : "Saved on this device only. Turn on sync in Progress to see meals on your other devices.");
+    status(line, warn);
+    const st = $("syncState");
+    if (st) { st.textContent = on ? "On · " + sync.cfg.repo : "Off"; st.className = "have" + (on ? " full" : ""); }
+    $("syncSetup").hidden = on; $("syncOn").hidden = !on;
   }
+  $("syncConnect").onclick = async () => {
+    const token = $("syncToken").value.trim();
+    const repo = ($("syncRepo").value.trim() || DEFAULT_REPO).replace(/^https?:\/\/github\.com\//, "").replace(/\/$/, "");
+    if (!token) { $("syncMsg").textContent = "Paste your access key first."; return; }
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) { $("syncMsg").textContent = "The repository should look like name/plate-log-data."; return; }
+    $("syncConnect").disabled = true; $("syncMsg").textContent = "Connecting…";
+    const prev = sync.cfg;
+    sync.cfg = { token, repo, last: 0 };
+    try {
+      await sync.pull();
+      writeSync(sync.cfg); $("syncToken").value = ""; $("syncMsg").textContent = "";
+      await sync.run(); toast("Sync is on");
+    } catch (e) { sync.cfg = prev; $("syncMsg").textContent = "Couldn't connect: " + e.message; }
+    finally { $("syncConnect").disabled = false; renderSync(); }
+  };
+  $("syncNow").onclick = () => sync.run();
+  $("syncOff").onclick = () => {
+    if ($("syncOff").dataset.armed !== "1") { $("syncOff").dataset.armed = "1"; $("syncOff").textContent = "Tap again to turn off"; setTimeout(() => { $("syncOff").dataset.armed = ""; $("syncOff").textContent = "Turn off on this device"; }, 3000); return; }
+    sync.cfg = {}; writeSync({}); renderSync(); toast("Sync turned off on this device");
+  };
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") sync.run(); });
+  window.addEventListener("online", () => sync.run());
+  setInterval(() => { if (document.visibilityState === "visible") sync.run(); }, 60000);
+  function initSync() { $("syncRepo").value = sync.cfg.repo || DEFAULT_REPO; renderSync(); sync.run(); }
 
   /* ================= state ================= */
   let day = todayStr();
@@ -678,7 +704,7 @@
   buildIndex(); renderChips(); renderMetricChips();
   loadLocalIntoState();
   show(location.hash.slice(1) || "today");
-  initFirebase();
+  initSync();
 
   // expose parser for testing
   window.__plate = { parseLine, macrosFor, foodsInText, expandReceipt };
